@@ -51,9 +51,8 @@ async def create_weekly_calendar_message(channel, start_timestamp=None, day_offs
 
     # Create the message content
     message = f"""
-    Next Session: <t:{start_timestamp}:t> - <t:{end_timestamp}:t>
+    Next Session: <t:{start_timestamp}> - <t:{end_timestamp}:t>
     which is <t:{start_timestamp}:R>!
-    @everyone
     """
 
     # Send the message
