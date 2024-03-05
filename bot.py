@@ -15,7 +15,8 @@ client = discord.Client(intents=intents)
 
 @client.event
 async def on_ready():
-    print(f'{client.user} has connected to Discord!')
+  print(f'{client.user} has connected to Discord!')
+  await client.change_presence(activity=discord.Activity(type=discord.ActivityType.playing, name="Pathfinder 2e"), status=discord.Status.online)
 
 @client.event
 async def on_message(message):
