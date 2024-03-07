@@ -19,15 +19,16 @@ async def on_ready():
   
 @client.event
 async def on_message(message):
-  if message.content.startswith('!thursday'):
-    channel_id = int(os.getenv('CHANNEL_ID', 0))  # Fetch from .env file with default value of 0
-    channel = client.get_channel(channel_id)
-    next_session_number = await create_weekly_calendar_message(channel, day_offset=3)  # Thursday offset
-    
-  elif message.content.startswith('!friday'): 
-    channel_id = int(os.getenv('CHANNEL_ID', 0))
-    channel = client.get_channel(channel_id)
-    next_session_number = await create_weekly_calendar_message(channel, day_offset=4)  # Friday offset
+    if message.author == client.user:  # Prevent the bot from responding to itself
+        return
+
+    if message.content.startswith('!thursday'):
+        await create_weekly_calendar_message(message.channel, day_offset=3)  # Send to trigger channel
+        await message.delete()  # Delete the trigger message
+
+    elif message.content.startswith('!friday'): 
+        await create_weekly_calendar_message(message.channel, day_offset=4)  # Send to trigger channel
+        await message.delete()  # Delete the trigger message
 
 @client.event
 async def create_weekly_calendar_message(channel, start_timestamp=None, day_offset=3):
@@ -40,7 +41,24 @@ async def create_weekly_calendar_message(channel, start_timestamp=None, day_offs
         start_timestamp (int, optional): A Unix timestamp to start from. If not
                                         provided, the next Thursday will be used.
     """
-    
+    async def find_session_number(channel):
+        """Fetches the most recent session number from channel history"""
+        async for msg in channel.history(limit=50):  
+            if msg.content.startswith("Session "):
+                parts = msg.content.split()  
+                if len(parts) >= 2:
+                    session_str = parts[1]
+                    if session_str.endswith(":"):  # Check for the colon
+                        session_str = session_str[:-1]  # Remove the colon
+                    if session_str.isdigit():
+                        return int(session_str)
+                return None  
+        return None  # No session message found
+
+    session_number = await find_session_number(channel)
+    if session_number is None:
+        session_number = 13  # Default starting session number
+
     # Calculate timestamps for next Thursday
     if start_timestamp is None:
       now = datetime.datetime.now()
@@ -50,6 +68,7 @@ async def create_weekly_calendar_message(channel, start_timestamp=None, day_offs
 
     # Create the message content
     message = f"""
+    Session {session_number+1}: 
     Next Session: <t:{start_timestamp}> - <t:{end_timestamp}:t>
     which is <t:{start_timestamp}:R>!
     """
