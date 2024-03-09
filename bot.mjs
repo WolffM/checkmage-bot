@@ -1,7 +1,6 @@
-import {saveGameData, loadGameData} from './savaData.js'; 
+import {saveGameData, loadGameData} from './saveData.mjs'; 
 import { Client, GatewayIntentBits } from 'discord.js';
 import dotenv from 'dotenv';
-dotenv.config();
 
 // Load environment variables
 dotenv.config(); // Assumes a .env file exists
@@ -290,8 +289,9 @@ async function createWeeklyCalendarMessage(channel, startTimestamp = null, dayOf
         targetDay.setHours(18, 0, 0); // Set to 6 PM
 
         startTimestamp = Math.floor(targetDay.getTime() / 1000); // Unix timestamp in seconds
-        endTimestamp = startTimestamp + 3 * 60 * 60; // Add 3 hours
+        endTimestamp = startTimestamp + 3 * 60 * 60;
     }
+    
 
     // Create the message content (Discord timestamp formatting might need an alternative)
     const message = `

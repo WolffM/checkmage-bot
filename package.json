@@ -1,8 +1,9 @@
 {
+  "type": "module",
   "name": "discord",
   "version": "1.0.0",
   "description": "checkmage-bot",
-  "main": "bot.js",
+  "main": "bot.mjs",
   "scripts": {
     "test": "npm start"
   },
@@ -21,6 +22,8 @@
   "homepage": "https://github.com/erinwolff/checkmate-bot#readme",
   "dependencies": {
     "discord": "^0.8.2",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5",
     "fs": "^0.0.1-security"
   }
 }
