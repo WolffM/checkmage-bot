@@ -4,11 +4,15 @@ import re
 import datetime
 import random
 import json
-
+import asyncio
+from discord.ui import Button, View 
 from dotenv import load_dotenv
+
+print(discord.__version__)
 
 load_dotenv()  # Load environment variables from a .env file (explained below)
 TOKEN = os.getenv('DISCORD_TOKEN')  # Get your bot token
+game_in_progress = False
 
 # Specify Intents
 intents = discord.Intents.default()  # For basic functionality
@@ -19,16 +23,19 @@ client = discord.Client(intents=intents)
 @client.event
 async def on_ready():
   print(f'{client.user} has connected to Discord!')
-  
+
 @client.event
 async def on_message(message):
     if message.author == client.user:  # Prevent the bot from responding to itself
         return
-
-    if message.content.startswith('!thursday'):
+    if game_in_progress:  # You'll need to define this function 
+        if message.content.startswith('!resign') or message.content.startswith('!ff'):
+            await handle_resignation(message)  # Define handle_resignation function
+            await message.delete()
+        return  # Ignore all other commands during a game 
+    elif message.content.startswith('!thursday'):
         await create_weekly_calendar_message(message.channel, day_offset=3)  # Send to trigger channel
         await message.delete()  # Delete the trigger message
-
     elif message.content.startswith('!friday'): 
         await create_weekly_calendar_message(message.channel, day_offset=4)  # Send to trigger channel
         await message.delete()  # Delete the trigger message
@@ -36,19 +43,111 @@ async def on_message(message):
         await calculate_trivia_stats(message.channel) 
         await message.delete() 
     elif message.content.startswith('!herodraft3'):
-        await start_herodraft(message, draft_size=3)  # We'll need to define the start_game function 
-        await message.delete() 
+        await start_herodraft(message, draft_size=3) 
     elif message.content.startswith('!herodraft5'):
         await start_herodraft(message, draft_size=5)  
-        await message.delete()
     elif message.content.startswith('!roll'):
         await calculate_roll_result(message.content[5:], message)
-    elif message.content.startswith('!fetch'):
-        message_id = message.content.split(' ')[1] 
-        message_json = await fetch_message_json(message_id, message.channel)
-        await message.delete()
-        print(f"`json\n{message_json}`")
 
+@client.event
+async def start_herodraft(message, draft_size):
+    button = Button(label="Accept Challenge", style=discord.ButtonStyle.green)
+    view = View(timeout=60)  # Timeout the challenge after 60 seconds
+    view.add_item(button) 
+
+    challenge_msg = await message.channel.send(f"{message.author.mention} has issued a Hero Draft challenge!", view=view)
+
+    async def button_callback(interaction):  # Define callback for button press
+        global game_in_progress  # Indicate game is now starting
+        game_in_progress = True
+
+        challenger = message.author
+        opponent = interaction.user
+
+        if challenger == opponent:  # Check for self-battle attempt
+            await interaction.response.send_message("You cannot battle yourself!", ephemeral=True)
+            return  # Prevent the game from starting
+
+        # Embed is better for game start announcements
+        embed = discord.Embed(title="Game Starting!", 
+                              description=f"{challenger.mention} vs {opponent.mention}")
+        await interaction.response.edit_message(content=None, embed=embed, view=None)  # Remove the button 
+
+        # Start the game logic (replace with your game-specific function)
+        await herodraft(challenger, opponent, message.channel)
+
+    button.callback = button_callback  # Assign the callback to the button
+
+async def herodraft(challenger, opponent, channel):
+    await channel.send(f"The game between {challenger.mention} and {opponent.mention} begins!")
+    current_player = challenger
+    challenger_health = 3
+    opponent_health = 3
+
+    if random.randint(0, 1) == 0:
+        current_player = challenger
+        await channel.send(f"{challenger.mention} won the coin toss and goes first!")
+    else:
+        current_player = opponent
+        await channel.send(f"{opponent.mention} won the coin toss and goes first!")
+
+    while True:  # Main game loop
+        embed = discord.Embed(title=f"{current_player.mention}'s Turn",
+                              description=f"**Challenger:** {challenger_health} HP\n"
+                                          f"**Opponent:** {opponent_health} HP")
+
+        attack_button = discord.ui.Button(label="Attack", style=discord.ButtonStyle.red)
+        pass_button = discord.ui.Button(label="Pass", style=discord.ButtonStyle.grey)
+        view = discord.ui.View()  # Create a View to hold the buttons
+        view.add_item(attack_button)
+        view.add_item(pass_button)
+
+        await channel.send(embed=embed, view=view)
+
+        async def button_callback(interaction):
+            nonlocal challenger_health, opponent_health, current_player 
+
+            if interaction.user != current_player:
+                await interaction.response.send_message("It's not your turn!", ephemeral=True)
+                return
+
+            if interaction.component.label == "Attack":
+                if current_player == challenger:
+                    opponent_health -= 1
+                else:
+                    challenger_health -= 1
+
+                await interaction.response.edit_message(content=f"{interaction.user.mention} attacked!", view=None)
+            
+            if interaction.component.label == "Pass":
+                await interaction.response.edit_message(content=f"{interaction.user.mention} passed their turn.", view=None)
+
+            # Switch turns
+            current_player = opponent if current_player == challenger else challenger 
+
+            # Check for win condition
+        if opponent_health <= 0:
+            await channel.send(f"{challenger.mention} wins!")
+            break
+        elif challenger_health <= 0:
+            await channel.send(f"{opponent.mention} wins!")
+            break
+
+        attack_button.callback = button_callback
+        pass_button.callback = button_callback
+
+        challenge_msg = await message.channel.send(f"{message.author.mention} has issued a Hero Draft challenge!", view=view)
+
+        try:
+            interaction = await client.wait_for('interaction', check=lambda i: i.message.id == challenge_msg.id, timeout=60)  
+            await button_callback(interaction)  # Process the interaction
+        except asyncio.TimeoutError:
+            await channel.send("Challenge timed out due to inactivity.") 
+
+@client.event
+async def handle_resignation(message):
+    global game_in_progress
+    game_in_progress = False
 @client.event
 async def calculate_roll_result(roll_string, message):
     dice_pattern = re.compile(r'(\d+d\d+)(?:\s*(\+|-)\s*(\d+d\d+|\d+))?')  # Modified pattern
@@ -106,7 +205,6 @@ async def calculate_roll_result(roll_string, message):
             output += " Critical Failure..."
           
     await message.channel.send(output) 
-
 @client.event
 async def calculate_trivia_stats(channel):
     user_scores = {}
@@ -132,7 +230,6 @@ async def calculate_trivia_stats(channel):
         stats_message += f"- {username}: {scores['correct']}/{scores['total']} ({accuracy}%)\n"  # Indent
 
     print(stats_message)
-
 @client.event
 async def create_weekly_calendar_message(channel, start_timestamp=None, day_offset=3):
     """
@@ -180,31 +277,6 @@ async def create_weekly_calendar_message(channel, start_timestamp=None, day_offs
 
     # Send the message
     await channel.send(message)
-
-@client.event
-async def fetch_message_json(message_id, channel):
-    try:
-        fetched_message = await channel.fetch_message(message_id)
-
-         # Get info as a dictionary 
-        message_info = {
-            attr: getattr(fetched_message, attr) 
-            for attr in dir(fetched_message)
-            if not attr.startswith('_') 
-        }
-
-        # Special Handling for 'author' 
-        if 'author' in message_info:
-            message_info['author'] = str(message_info['author'])  # Convert to basic string
-
-        return message_info 
-
-    except discord.NotFound:
-        return "Error: Message not found."
-    except discord.Forbidden:
-        return "Error: Missing permissions to fetch the message."
-    except discord.HTTPException as e:
-        return f"Error: Failed to fetch message. Error code: {e.code}"
 
 if TOKEN is not None:
   client.run(TOKEN)
