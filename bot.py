@@ -61,10 +61,12 @@ async def create_weekly_calendar_message(channel, start_timestamp=None, day_offs
 
     # Calculate timestamps for next Thursday
     if start_timestamp is None:
-      now = datetime.datetime.now()
-      target_day = now + datetime.timedelta(days=(day_offset - now.weekday()) % 7) 
-      start_timestamp = int(target_day.replace(hour=18, minute=0, second=0).timestamp())  # 6 PM
-      end_timestamp = int(target_day.replace(hour=21, minute=0, second=0).timestamp())   # 9 PM
+        now = datetime.datetime.now()
+        day_adjustment = (day_offset - now.weekday() + 7) % 7  # Adjusted calculation
+        target_day = now + datetime.timedelta(days=day_adjustment)
+        start_timestamp = int(target_day.replace(hour=18, minute=0, second=0).timestamp())
+        end_timestamp = int(target_day.replace(hour=21, minute=0, second=0).timestamp())
+
 
     # Create the message content
     message = f"""
