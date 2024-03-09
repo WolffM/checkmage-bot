@@ -1,0 +1,26 @@
+{
+  "name": "discord",
+  "version": "1.0.0",
+  "description": "checkmage-bot",
+  "main": "bot.js",
+  "scripts": {
+    "test": "npm start"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/erinwolff/checkmate-bot.git"
+  },
+  "keywords": [
+    "bot"
+  ],
+  "author": "Hadoku",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/erinwolff/checkmate-bot/issues"
+  },
+  "homepage": "https://github.com/erinwolff/checkmate-bot#readme",
+  "dependencies": {
+    "discord": "^0.8.2",
+    "fs": "^0.0.1-security"
+  }
+}
