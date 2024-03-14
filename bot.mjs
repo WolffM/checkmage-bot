@@ -114,7 +114,7 @@ client.on('interactionCreate', async (interaction) => {
             challengerName: challenger.username,
             opponentId: opponent.id,
             opponentName: opponent.username,
-            channel: channel.id,
+            channelId: channel.id,
             challengerHealth: 3,
             opponentHealth: 3,
             currentPlayerId: currentPlayerId, // Start with the challenger
@@ -132,31 +132,37 @@ client.on('interactionCreate', async (interaction) => {
         const [, actionType, gameFilename] = interaction.customId.split('_'); // Extract filename
 
         let gameData = await loadGameData(gameFilename);
+        const { currentPlayerId, challengerId, currentPlayerName} = gameData;
+
         if (!gameData) {
             await interaction.reply({ content: "Could not load game data.", ephemeral: true });
             return;
         }
         console.log('actionType', actionType)
-        if (interaction.user.id !== gameData.currentPlayerId) {
+        if (interaction.user.id !== currentPlayerId) {
             await interaction.reply({ content: `It's not your turn!`, ephemeral: true });
             return
         }
         // **** ATTACK HANDLER ****
         if (actionType === 'attack') {
-            if (gameData.currentPlayerId === gameData.challengerId) {
+            if (currentPlayerId === challengerId) {
                 gameData.opponentHealth -= 1;
                 console.log('reducing opponent Health')
             } else {
                 gameData.challengerHealth -= 1;
                 console.log('reducing challenger Health')
             }
+            gameData = swapPlayers(gameData)
             await saveGameData(gameData, gameFilename);
-            await interaction.reply(`${gameData.currentPlayerName.toString()} attacked and dealt 1 damage!`);
+            await interaction.update({components: []}) 
+            await interaction.followUp(`${currentPlayerName.toString()} attacked and dealt 1 damage!`);
         }
         // **** PASS HANDLER ****
         else if (actionType === 'pass') {
+            gameData = swapPlayers(gameData)
             await saveGameData(gameData, gameFilename);
-            await interaction.reply(`${gameData.currentPlayerName.toString()} passed their turn...`);
+            await interaction.update({components: []}) 
+            await interaction.followUp(`${currentPlayerName.toString()} passed their turn...`);
         }
         return
     }
@@ -190,7 +196,17 @@ async function herodraft(challenger, opponent, channel, gameFilename) {
 
     while (true) {
         let gameData = await loadGameData(gameFilename);
-        const { currentPlayerId, currentPlayerName, challengerHealth, opponentHealth } = gameData;
+        const { currentPlayerName, challengerHealth, challengerName, opponentHealth, opponentName, channelId } = gameData;
+
+        if (challengerHealth <= 0){
+            await channel.send(`${challengerName} has lost!`);
+            gameInProgress = false
+            break;
+        } else if (opponentHealth <= 0){
+            await channel.send(`${opponentName} has lost!`);
+            gameInProgress = false;
+            break;
+        } 
 
         const embed = new EmbedBuilder()
             .setTitle(`${currentPlayerName}'s Turn`)
@@ -213,12 +229,13 @@ async function herodraft(challenger, opponent, channel, gameFilename) {
 
         // Wait for interaction
         try {
-            const filter = (m) => m.content.includes('attacked and dealt 1 damage!');
-            const message = await channel.awaitMessages({ filter, max: 1, time: 60_000, errors: ['time'] })
-                .then(collected => collected.first());
-        
-            // Attack logic here
-            console.log(`${currentPlayerName} attacked (via message)`); //Or a more informative message
+            const filter = (m) => {
+                if (m.author.username.includes('checkmage-bot') && 
+                    m.channelId.includes(channelId)) {
+                    return true;
+                }
+            }
+            await channel.awaitMessages({ filter, max:1, time: 60_000, errors: ['time'] })
 
         } catch (error) {
             if (error.name === 'TimeoutError') {
@@ -226,19 +243,6 @@ async function herodraft(challenger, opponent, channel, gameFilename) {
             } else {
                 console.error("Error waiting for interaction:", error);
             }
-        }
-        if (challengerHealth <= 0){
-            await channel.send(`${gameData.challengerName} has lost!`);
-            gameInProgress = false
-            break;
-        } else if (opponentHealth <= 0){
-            await channel.send(`${gameData.opponentName} has lost!`);
-            gameInProgress = false;
-            break;
-        } 
-        else { 
-            gameData = swapPlayers(gameData)
-            await saveGameData(gameData, gameFilename)
         }
     }
 }
