@@ -1,8 +1,8 @@
 import { saveGameData, loadGameData } from './saveData.mjs';
-import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { swapPlayers } from './helper.mjs';
+import { swapPlayers, combineImages } from './helper.mjs';
 
 dotenv.config();
 const TOKEN = process.env.DISCORD_TOKEN;
@@ -110,10 +110,14 @@ client.on('interactionCreate', async (interaction) => {
 
         // Initialize game data
         const gameData = {
+            activeChallengerHero: 'Kitsune',
+            activeOpponentHero: 'Dwarf',
             challengerId: challenger.id,
             challengerName: challenger.username,
+            challengerEnergy: 3,
             opponentId: opponent.id,
             opponentName: opponent.username,
+            opponentEnergy: 3,
             channelId: channel.id,
             challengerHealth: 3,
             opponentHealth: 3,
@@ -132,7 +136,7 @@ client.on('interactionCreate', async (interaction) => {
         const [, actionType, gameFilename] = interaction.customId.split('_'); // Extract filename
 
         let gameData = await loadGameData(gameFilename);
-        const { currentPlayerId, challengerId, currentPlayerName} = gameData;
+        const { currentPlayerId, challengerId, currentPlayerName } = gameData;
 
         if (!gameData) {
             await interaction.reply({ content: "Could not load game data.", ephemeral: true });
@@ -154,14 +158,14 @@ client.on('interactionCreate', async (interaction) => {
             }
             gameData = swapPlayers(gameData)
             await saveGameData(gameData, gameFilename);
-            await interaction.update({components: []}) 
+            await interaction.update({ components: [] })
             await interaction.followUp(`${currentPlayerName.toString()} attacked and dealt 1 damage!`);
         }
         // **** PASS HANDLER ****
         else if (actionType === 'pass') {
             gameData = swapPlayers(gameData)
             await saveGameData(gameData, gameFilename);
-            await interaction.update({components: []}) 
+            await interaction.update({ components: [] })
             await interaction.followUp(`${currentPlayerName.toString()} passed their turn...`);
         }
         return
@@ -193,49 +197,82 @@ async function handleResignation(message) {
 
 async function herodraft(challenger, opponent, channel, gameFilename) {
     await channel.send(`The game between ${challenger.username} and ${opponent.username} begins!`);
+    const energyBarLength = 10;
 
     while (true) {
         let gameData = await loadGameData(gameFilename);
-        const { currentPlayerName, challengerHealth, challengerName, opponentHealth, opponentName, channelId } = gameData;
+        const { currentPlayerName, activeChallengerHero, activeOpponentHero, challengerEnergy, opponentEnergy, challengerHealth, challengerName, opponentHealth, opponentName, channelId } = gameData;
 
-        if (challengerHealth <= 0){
+        if (challengerHealth <= 0) {
             await channel.send(`${challengerName} has lost!`);
             gameInProgress = false
             break;
-        } else if (opponentHealth <= 0){
+        } else if (opponentHealth <= 0) {
             await channel.send(`${opponentName} has lost!`);
             gameInProgress = false;
             break;
-        } 
+        }
+
+        const challengerCombatImagePath = './assets/' + activeChallengerHero + 'Combat.png'
+        const opponentCombatImagePath = './assets/' + activeOpponentHero + 'Combat.png'
+        const testpath = './assets/test.png'
+        const challengerImage = fs.readFileSync(challengerCombatImagePath);
+        const opponentImage = fs.readFileSync(opponentCombatImagePath);
+        const testimage = fs.readFileSync(testpath);
+        const challengerEnergyBar = " [" + "⚡️".repeat(challengerEnergy) + "-".repeat(energyBarLength - challengerEnergy) + "] ";
+        const opponentEnergyBar = " [" + "⚡️".repeat(opponentEnergy) + "-".repeat(energyBarLength - opponentEnergy) + "] ";
+
+        const TitleEmbed = new EmbedBuilder().setTitle(`${currentPlayerName}'s Turn`)
+        await channel.send({ embeds: [TitleEmbed] })
 
         const embed = new EmbedBuilder()
-            .setTitle(`${currentPlayerName}'s Turn`)
-            .setDescription(`**Challenger:** ${challengerHealth} HP\n**Opponent:** ${opponentHealth} HP`);
+            .addFields(
+                { name: activeChallengerHero, value: `${challengerHealth} HP`, inline: true },
+                { name: activeOpponentHero, value: `${opponentHealth} HP`, inline: true },
+                { name: '\u200b', value: '\u200b ', inline: true }, // Add an empty field for spacing
+                { name: challengerName, value: challengerEnergyBar, inline: true },
+                { name: opponentName, value: opponentEnergyBar, inline: true },
+            )
+            //.setThumbnail('attachment://' + challengerCombatImagePath) // Challenger on left
+            //.setImage('attachment://' + opponentCombatImagePath);   // Opponent on right
+            .setImage('attachment://' + testpath);
 
         const attackButton = new ButtonBuilder()
             .setLabel('Attack')
             .setStyle(ButtonStyle.Danger)
             .setCustomId(`herodraft_attack_${gameFilename}`);
 
-        const passButton = new ButtonBuilder()
-            .setLabel('Pass')
+        const abilityButton = new ButtonBuilder()
+            .setLabel('Ability')
+            .setStyle(ButtonStyle.Primary)
+            .setCustomId(`herodraft_ability_${gameFilename}`);
+
+        const switchButton = new ButtonBuilder()
+            .setLabel('Switch')
             .setStyle(ButtonStyle.Secondary)
-            .setCustomId(`herodraft_pass_${gameFilename}`);
+            .setCustomId(`herodraft_switch_${gameFilename}`);
 
         const view = new ActionRowBuilder()
-            .addComponents(attackButton, passButton);
+            .addComponents(attackButton, abilityButton, switchButton);
 
-        await channel.send({ embeds: [embed], components: [view] });
+        await channel.send({
+            embeds: [embed],
+            files: [
+                //new AttachmentBuilder(challengerImage, { name:  }),
+                new AttachmentBuilder(testimage, { name: testpath })
+            ],
+            components: [view]
+        });
 
         // Wait for interaction
         try {
             const filter = (m) => {
-                if (m.author.username.includes('checkmage-bot') && 
+                if (m.author.username.includes('checkmage-bot') &&
                     m.channelId.includes(channelId)) {
                     return true;
                 }
             }
-            await channel.awaitMessages({ filter, max:1, time: 60_000, errors: ['time'] })
+            await channel.awaitMessages({ filter, max: 1, time: 60_0000, errors: ['time'] })
 
         } catch (error) {
             if (error.name === 'TimeoutError') {
