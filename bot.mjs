@@ -1,18 +1,17 @@
-import {saveGameData, loadGameData} from './saveData.mjs'; 
-import { Client, GatewayIntentBits } from 'discord.js';
+import { saveGameData, loadGameData } from './saveData.mjs';
+import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import { swapPlayers } from './helper.mjs';
 
-// Load environment variables
-dotenv.config(); // Assumes a .env file exists
+dotenv.config();
 const TOKEN = process.env.DISCORD_TOKEN;
 let gameInProgress = false;
 
-// Create the Discord client
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
-// Event: Bot is ready
 client.on('ready', () => {
     console.log(`Logged in as ${client.user.tag}!`);
 });
@@ -24,18 +23,15 @@ client.on('messageCreate', async (message) => { // Updated event name
         if (message.content.startsWith('!resign') || message.content.startsWith('!ff')) {
             await handleResignation(message);
         }
-        else if(message.content.startsWith('!save')){
-            saveGameData('test')
-        }
-        else{
+        else {
             await message.author.reply({ content: 'A game is inprogress!', ephemeral: true });
         }
         return;
     } else if (message.content.startsWith('!thursday')) {
-        await createWeeklyCalendarMessage(message.channel, 3);
+        await createWeeklyCalendarMessage(message.channel, 4);
         await message.delete();
     } else if (message.content.startsWith('!friday')) {
-        await createWeeklyCalendarMessage(message.channel, 4);
+        await createWeeklyCalendarMessage(message.channel, 5);
         await message.delete();
     } else if (message.content.startsWith('!triviastats')) {
         await calculateTriviaStats(message.channel);
@@ -52,80 +48,201 @@ client.on('messageCreate', async (message) => { // Updated event name
 });
 
 client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isButton()) return; 
+    if (!interaction.isButton()) return;
 
-    if (interaction.customId === 'accept') { 
-        // Handle challenge acceptance
-        const challengeMsg = await interaction.message.fetch(); // Fetch the original challenge message
-        if (!challengeMsg) {
-            await interaction.reply({ content: 'Challenge message not found.', ephemeral: true }); 
+    else if (interaction.customId === 'herodraft_accept') {
+        const opponent = interaction.user;
+        const channel = interaction.channel
+        let challenger = null;
+
+        // Fetch recent messages to find the challenge
+        const messages = await interaction.channel.messages.fetch({ limit: 10 }); // Adjust limit if needed
+        const challengeMessage = messages.find(msg => msg.content.startsWith('!herodraft'));
+
+        if (challengeMessage) {
+            challenger = challengeMessage.author;
+        } else {
+            // Handle case where no challenge message is found 
+            await interaction.reply({ content: 'Could not find the original challenge message.', ephemeral: true });
             return;
         }
 
-        const challenger = challengeMsg.author; 
-        const opponent = interaction.user;
-        const channel = interaction.channel;
+        if (challenger.id === opponent.id) { // Check if IDs match 
+            await interaction.reply({ content: 'You cannot battle yourself!', ephemeral: true });
+            return;
+        }
 
-        // Start the herodraft game
-        await herodraft(challenger, opponent, channel); 
+        // Create and send the game start embed
+        const embed = new EmbedBuilder()
+            .setTitle('Game Starting!')
+            .setDescription(`${challenger.username} vs ${opponent.username}`);
 
-        await interaction.reply({ content: `Challenge accepted! Let the Hero Draft begin!`, ephemeral: true });
-    } // ... else if blocks for other buttons 
+        // Modify response to remove button and send embed
+        await interaction.update({ embed: embed, components: [] });
+
+        let gameCounter = 1;
+        let gameFilename = '';
+        const now = new Date();
+        const dateString = now.toISOString().substring(0, 10); // YYYY-MM-DD format
+        do {
+            gameFilename = `${dateString}-${gameCounter}-${challenger.username}-vs-${opponent.username}.json`;
+            if (fs.existsSync(`savedgames/${gameFilename}`)) {
+                gameCounter++;
+            } else {
+                break; // Found a unique filename
+            }
+        } while (true);
+
+        console.log('gameFilename', gameFilename)
+
+        let currentPlayerId = challenger.id;
+        let currentPlayerName = challenger.username
+
+        if (Math.random() < 0.5) {
+            currentPlayerId = challenger.id;
+            currentPlayerName = challenger.username
+            await channel.send(`${challenger.username.toString()} won the coin toss and goes first!`);
+        } else {
+            currentPlayerId = opponent.id;
+            currentPlayerName = opponent.username
+            await channel.send(`${opponent.username.toString()} won the coin toss and goes first!`);
+        }
+
+        // Initialize game data
+        const gameData = {
+            challengerId: challenger.id,
+            challengerName: challenger.username,
+            opponentId: opponent.id,
+            opponentName: opponent.username,
+            channel: channel.id,
+            challengerHealth: 3,
+            opponentHealth: 3,
+            currentPlayerId: currentPlayerId, // Start with the challenger
+            currentPlayerName: currentPlayerName
+        };
+
+        // Save initial game state
+        await saveGameData(gameData, gameFilename);
+
+        // Start the game
+        await herodraft(challenger, opponent, channel, gameFilename);
+    }
+
+    else if (interaction.customId.startsWith('herodraft_')) {
+        const [, actionType, gameFilename] = interaction.customId.split('_'); // Extract filename
+
+        let gameData = await loadGameData(gameFilename);
+        if (!gameData) {
+            await interaction.reply({ content: "Could not load game data.", ephemeral: true });
+            return;
+        }
+        console.log('actionType', actionType)
+        if (interaction.user.id !== gameData.currentPlayerId) {
+            await interaction.reply({ content: `It's not your turn!`, ephemeral: true });
+            return
+        }
+        // **** ATTACK HANDLER ****
+        if (actionType === 'attack') {
+            if (gameData.currentPlayerId === gameData.challengerId) {
+                gameData.opponentHealth -= 1;
+                console.log('reducing opponent Health')
+            } else {
+                gameData.challengerHealth -= 1;
+                console.log('reducing challenger Health')
+            }
+            await saveGameData(gameData, gameFilename);
+            await interaction.reply(`${gameData.currentPlayerName.toString()} attacked and dealt 1 damage!`);
+        }
+        // **** PASS HANDLER ****
+        else if (actionType === 'pass') {
+            await saveGameData(gameData, gameFilename);
+            await interaction.reply(`${gameData.currentPlayerName.toString()} passed their turn...`);
+        }
+        return
+    }
 });
 
 async function startHerodraft(message, draftSize) {
-    const button = new Discord.ButtonBuilder()
+    // Create the button 
+    const button = new ButtonBuilder()
         .setLabel('Accept Challenge')
-        .setStyle(Discord.ButtonStyle.Success)
-        .setCustomId('accept'); // You'll need an interaction handler
+        .setStyle(ButtonStyle.Success)
+        .setCustomId('herodraft_accept');
 
-    const view = new Discord.ActionRowBuilder()
+    // Create the Action Row
+    const view = new ActionRowBuilder()
         .addComponents(button);
 
     const challengeMsg = await message.channel.send({
         content: `${message.author.toString()} has issued a Hero Draft challenge!`,
         components: [view]
     });
-
-    // ... Interaction Handling (explained later) ...
 }
 
 
-async function handleResignation(message){
+async function handleResignation(message) {
     gameInProgress = false
     await channel.send(`${message.author()} has resigned!`);
 }
 
-async function herodraft(challenger, opponent, channel) {
-    await channel.send(`The game between ${challenger.toString()} and ${opponent.toString()} begins!`);
-
-    let currentPlayer = challenger;
-    let challengerHealth = 3;
-    let opponentHealth = 3;
-
-    if (Math.random() < 0.5) {
-        currentPlayer = challenger;
-        await channel.send(`${challenger.toString()} won the coin toss and goes first!`);
-    } else {
-        currentPlayer = opponent;
-        await channel.send(`${opponent.toString()} won the coin toss and goes first!`);
-    }
+async function herodraft(challenger, opponent, channel, gameFilename) {
+    await channel.send(`The game between ${challenger.username} and ${opponent.username} begins!`);
 
     while (true) {
-        const embed = new Discord.EmbedBuilder()
-            .setTitle(`${currentPlayer.toString()}'s Turn`)
+        let gameData = await loadGameData(gameFilename);
+        const { currentPlayerId, currentPlayerName, challengerHealth, opponentHealth } = gameData;
+
+        const embed = new EmbedBuilder()
+            .setTitle(`${currentPlayerName}'s Turn`)
             .setDescription(`**Challenger:** ${challengerHealth} HP\n**Opponent:** ${opponentHealth} HP`);
 
-        // ... Create Attack/Pass buttons with custom IDs ...
+        const attackButton = new ButtonBuilder()
+            .setLabel('Attack')
+            .setStyle(ButtonStyle.Danger)
+            .setCustomId(`herodraft_attack_${gameFilename}`);
 
-        const view = new Discord.ActionRowBuilder()
-            .addComponents(/* your buttons */);
+        const passButton = new ButtonBuilder()
+            .setLabel('Pass')
+            .setStyle(ButtonStyle.Secondary)
+            .setCustomId(`herodraft_pass_${gameFilename}`);
 
-        const sentMessage = await channel.send({ embeds: [embed], components: [view] });
+        const view = new ActionRowBuilder()
+            .addComponents(attackButton, passButton);
 
-        // ... Interaction Handling (explained below) ...
+        await channel.send({ embeds: [embed], components: [view] });
+
+        // Wait for interaction
+        try {
+            const filter = (m) => m.content.includes('attacked and dealt 1 damage!');
+            const message = await channel.awaitMessages({ filter, max: 1, time: 60_000, errors: ['time'] })
+                .then(collected => collected.first());
+        
+            // Attack logic here
+            console.log(`${currentPlayerName} attacked (via message)`); //Or a more informative message
+
+        } catch (error) {
+            if (error.name === 'TimeoutError') {
+                await channel.send(`${currentPlayerName} took too long to decide!`);
+            } else {
+                console.error("Error waiting for interaction:", error);
+            }
+        }
+        if (challengerHealth <= 0){
+            await channel.send(`${gameData.challengerName} has lost!`);
+            gameInProgress = false
+            break;
+        } else if (opponentHealth <= 0){
+            await channel.send(`${gameData.opponentName} has lost!`);
+            gameInProgress = false;
+            break;
+        } 
+        else { 
+            gameData = swapPlayers(gameData)
+            await saveGameData(gameData, gameFilename)
+        }
     }
 }
+
 
 async function calculateRollResult(rollString, message) {
     // Regular Expression (mostly unchanged)
@@ -248,7 +365,7 @@ async function calculateTriviaStats(channel) {
     }
 }
 
-async function createWeeklyCalendarMessage(channel, startTimestamp = null, dayOffset = 3) {
+async function createWeeklyCalendarMessage(channel, dayOffset = 3) {
     /**
      * Fetches the most recent session number from channel history
      */
@@ -281,17 +398,13 @@ async function createWeeklyCalendarMessage(channel, startTimestamp = null, dayOf
         sessionNumber = 13; // Default starting session number
     }
 
-    // Calculate timestamps for next Thursday
-    if (startTimestamp === null) {
-        const now = new Date();
-        const dayAdjustment = (dayOffset - now.getDay() + 7) % 7;
-        const targetDay = new Date(now.getTime() + dayAdjustment * 24 * 60 * 60 * 1000);
-        targetDay.setHours(18, 0, 0); // Set to 6 PM
+    const now = new Date();
+    const dayAdjustment = (dayOffset - now.getDay() + 7) % 7;
+    const targetDay = new Date(now.getTime() + dayAdjustment * 24 * 60 * 60 * 1000);
+    targetDay.setHours(18, 0, 0); // Set to 6 PM
 
-        startTimestamp = Math.floor(targetDay.getTime() / 1000); // Unix timestamp in seconds
-        endTimestamp = startTimestamp + 3 * 60 * 60;
-    }
-    
+    let startTimestamp = Math.floor(targetDay.getTime() / 1000); // Unix timestamp in seconds
+    let endTimestamp = startTimestamp + 3 * 60 * 60;
 
     // Create the message content (Discord timestamp formatting might need an alternative)
     const message = `
