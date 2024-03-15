@@ -2,7 +2,7 @@ import { saveGameData, loadGameData } from './saveData.mjs';
 import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { swapPlayers, combineImages } from './helper.mjs';
+import { swapPlayers } from './helper.mjs';
 
 dotenv.config();
 const TOKEN = process.env.DISCORD_TOKEN;
@@ -198,6 +198,10 @@ async function handleResignation(message) {
 async function herodraft(challenger, opponent, channel, gameFilename) {
     await channel.send(`The game between ${challenger.username} and ${opponent.username} begins!`);
     const energyBarLength = 10;
+
+    let gameData = await loadGameData(gameFilename);
+
+    combineImages()
 
     while (true) {
         let gameData = await loadGameData(gameFilename);

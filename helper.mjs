@@ -1,5 +1,3 @@
-const Jimp = require('jimp');
-
 export function swapPlayers(gameData) {
     const { currentPlayerId, challengerId, challengerName, opponentId, opponentName } = gameData; // Extract the values  
     console.log('trying to swap turns')
@@ -15,6 +13,7 @@ export function swapPlayers(gameData) {
     return gameData;
 }
 
+/*
 export async function combineImages(imagePath1, imagePath2, outputImagePath) {
     try {
         const [image1, image2] = await Promise.all([
@@ -32,8 +31,8 @@ export async function combineImages(imagePath1, imagePath2, outputImagePath) {
     } catch (error) {
         console.error('Error combining images:', error);
     }
-}
-
+}*/
+/*
 // Example usage:
 const heroes = [
     {
@@ -149,3 +148,4 @@ function createHeroDataFile(heroes) {
     });
 }
 
+*/
