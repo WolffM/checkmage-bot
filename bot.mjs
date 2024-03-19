@@ -1,8 +1,9 @@
-import { saveGameData, loadGameData } from './saveData.mjs';
+import { saveGameData, saveGameDataFields, loadGameData } from './saveData.mjs';
 import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { swapPlayers } from './helper.mjs';
+import { swapPlayers, combineImagesForCombat, combineImagesForDraft, shuffleArray, initializeTeamFile } from './helper.mjs';
+const str = 'Mozilla';
 
 dotenv.config();
 const TOKEN = process.env.DISCORD_TOKEN;
@@ -50,6 +51,56 @@ client.on('messageCreate', async (message) => { // Updated event name
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
 
+    else if (interaction.customId === 'herodraft_start') {
+
+    } else if (interaction.customId.startsWith('draft_')) {
+        const [, choice, gameFilename] = interaction.customId.split('_'); // Extract filename
+
+        let gameData = await loadGameData(gameFilename);
+        const { currentPlayerName, currentPlayerId, draftCount } = gameData;
+
+        if (interaction.user.id !== currentPlayerId) {
+            await interaction.reply({ content: `It's not your turn!`, ephemeral: true });
+            return
+        }
+
+        const heroData = JSON.parse(fs.readFileSync('./assets/hero_data.json'));
+        console.log(`${currentPlayerName} chooses`, choice)
+        const selectedHero = heroData.heroes.find(hero => hero.name === choice);
+
+        if (!selectedHero) {
+            console.error('Could not find matching hero!');
+            return;
+        }
+
+        // Load team file
+        const teamFilename = `./genassets/teams/${currentPlayerName}_team.json`;
+        const teamData = JSON.parse(fs.readFileSync(teamFilename));
+        teamData.team.push(selectedHero);
+        fs.writeFileSync(teamFilename, JSON.stringify(teamData));
+
+        const newPlayer = await swapPlayers(gameFilename, gameData)
+
+        if (draftCount < 1) {
+            const components = interaction.message.components;
+            const oldEmbed = interaction.message.embeds[0];
+            const newEmbed = new EmbedBuilder(oldEmbed.data); // Create new embed using existing data
+            newEmbed.setTitle(`${newPlayer}'s draft pick`);
+
+            const buttonToRemove = components[0].components.find(button => button.data.custom_id === interaction.customId);
+            if (buttonToRemove) {
+                const buttonIndex = components[0].components.indexOf(buttonToRemove);
+                components[0].components.splice(buttonIndex, 1);
+                await interaction.update({ embeds: [newEmbed], components });
+            } else {
+                console.error("Couldn't find matching button to remove");
+            }
+        } else {
+            await interaction.update({ components: [] })
+        }
+
+    }
+
     else if (interaction.customId === 'herodraft_accept') {
         const opponent = interaction.user;
         const channel = interaction.channel
@@ -58,6 +109,7 @@ client.on('interactionCreate', async (interaction) => {
         // Fetch recent messages to find the challenge
         const messages = await interaction.channel.messages.fetch({ limit: 10 }); // Adjust limit if needed
         const challengeMessage = messages.find(msg => msg.content.startsWith('!herodraft'));
+        const draftSize = challengeMessage.toString().split('!herodraft')[1]
 
         if (challengeMessage) {
             challenger = challengeMessage.author;
@@ -74,7 +126,7 @@ client.on('interactionCreate', async (interaction) => {
 
         // Create and send the game start embed
         const embed = new EmbedBuilder()
-            .setTitle('Game Starting!')
+            .setTitle('Draft Starting!')
             .setDescription(`${challenger.username} vs ${opponent.username}`);
 
         // Modify response to remove button and send embed
@@ -110,8 +162,8 @@ client.on('interactionCreate', async (interaction) => {
 
         // Initialize game data
         const gameData = {
-            activeChallengerHero: 'Kitsune',
-            activeOpponentHero: 'Dwarf',
+            activeChallengerHero: '',
+            activeOpponentHero: '',
             challengerId: challenger.id,
             challengerName: challenger.username,
             challengerEnergy: 3,
@@ -129,7 +181,7 @@ client.on('interactionCreate', async (interaction) => {
         await saveGameData(gameData, gameFilename);
 
         // Start the game
-        await herodraft(challenger, opponent, channel, gameFilename);
+        await heroDraft(challenger, opponent, channel, parseInt(draftSize), gameFilename);
     }
 
     else if (interaction.customId.startsWith('herodraft_')) {
@@ -156,15 +208,13 @@ client.on('interactionCreate', async (interaction) => {
                 gameData.challengerHealth -= 1;
                 console.log('reducing challenger Health')
             }
-            gameData = swapPlayers(gameData)
-            await saveGameData(gameData, gameFilename);
+            await swapPlayers(gameFilename, gameData)
             await interaction.update({ components: [] })
             await interaction.followUp(`${currentPlayerName.toString()} attacked and dealt 1 damage!`);
         }
         // **** PASS HANDLER ****
         else if (actionType === 'pass') {
-            gameData = swapPlayers(gameData)
-            await saveGameData(gameData, gameFilename);
+            await swapPlayers(gameFilename, gameData)
             await interaction.update({ components: [] })
             await interaction.followUp(`${currentPlayerName.toString()} passed their turn...`);
         }
@@ -195,13 +245,95 @@ async function handleResignation(message) {
     await channel.send(`${message.author()} has resigned!`);
 }
 
-async function herodraft(challenger, opponent, channel, gameFilename) {
-    await channel.send(`The game between ${challenger.username} and ${opponent.username} begins!`);
-    const energyBarLength = 10;
+async function heroDraft(challenger, opponent, channel, draftSize, gameFilename) {
+    await channel.send(`The draft between ${challenger.username} and ${opponent.username} begins!`);
 
     let gameData = await loadGameData(gameFilename);
+    let { opponentName, challengerName, currentPlayerId, currentPlayerName } = gameData;
 
-    combineImages()
+    initializeTeamFile(`./genassets/teams/${challengerName}_team.json`);
+    initializeTeamFile(`./genassets/teams/${opponentName}_team.json`);
+
+    // Load hero data
+    const heroData = JSON.parse(fs.readFileSync('./assets/hero_data.json'));
+    let draftPool = [...heroData.heroes];
+    shuffleArray(draftPool); // Shuffle the hero pool
+
+    console.log('draftsize:', draftSize)
+
+    for (let i = 0; i < draftSize * 3; i += 3) { // Loop for each draft set
+        const hero1 = draftPool[i];
+        const hero2 = draftPool[i + 1];
+        const hero3 = draftPool[i + 2];
+
+        const hero1Path = './assets/' + hero1.name + 'Combat.png'
+        const hero2Path = './assets/' + hero2.name + 'Combat.png'
+        const hero3Path = './assets/' + hero3.name + 'Combat.png'
+        console.log(`building: './genassets/' + ${hero1.name} + '+' + ${hero2.name} + '+' + ${hero3.name} + 'Draft.png'`)
+        const outputImagePath = './genassets/' + hero1.name + '+' + hero2.name + '+' + hero3.name + 'Draft.png';
+        await combineImagesForDraft(hero1Path, hero2Path, hero3Path, outputImagePath);
+    }
+
+    for (let j = 0; j < draftSize * 3; j += 3) {
+        gameData = await loadGameData(gameFilename);
+        currentPlayerId = gameData.currentPlayerId;
+        currentPlayerName = gameData.currentPlayerName;
+
+        const hero1 = draftPool[j];
+        const hero2 = draftPool[j + 1];
+        const hero3 = draftPool[j + 2];
+        const draftImagePath = './genassets/' + hero1.name + '+' + hero2.name + '+' + hero3.name + 'Draft.png';
+
+        const embed = new EmbedBuilder()
+            .setTitle(`${currentPlayerName}'s draft pick`)
+            .setImage('attachment://' + draftImagePath);
+
+        // Setup buttons using hero names (You'll need the images)
+        const view = new ActionRowBuilder()
+            .addComponents([
+                new ButtonBuilder().setLabel(hero1.name).setStyle(ButtonStyle.Success).setCustomId(`draft_${hero1.name}_${gameFilename}`),
+                new ButtonBuilder().setLabel(hero2.name).setStyle(ButtonStyle.Success).setCustomId(`draft_${hero2.name}_${gameFilename}`),
+                new ButtonBuilder().setLabel(hero3.name).setStyle(ButtonStyle.Success).setCustomId(`draft_${hero3.name}_${gameFilename}`)
+            ]);
+
+        const message = await channel.send({
+            embeds: [embed],
+            files: [
+                new AttachmentBuilder(fs.readFileSync(draftImagePath), { name: draftImagePath })
+            ],
+            components: [view]
+        });
+
+        // Wait for button interaction 
+        let interactionsReceived = 0;
+        await saveGameDataFields(gameFilename, { draftCount: interactionsReceived});
+
+        while (interactionsReceived < 2) {
+            const filter = (i) => i.customId.startsWith('draft_');
+            const buttonInteraction = await message.awaitMessageComponent({ filter, time: 600000 /* Timeout */ })
+                .catch(error => {
+                    console.error('Draft timeout or error:', error);
+                    return null;
+                });
+
+            if (!buttonInteraction) continue; // Timeout or error
+
+            console.log('interactionsReceived')
+
+            interactionsReceived++;
+            if (interactionsReceived < 2) {
+                await saveGameDataFields(gameFilename, { draftCount: interactionsReceived});
+            }
+        }
+    }
+    heroGame(challengerName, opponentName, channel, gameFilename)
+}
+
+
+async function heroGame(challenger, opponent, channel, gameFilename) {
+    await channel.send(`The game between ${challenger} and ${opponent} begins!`);
+    const energyBarLength = 10;
+    let turnCount = 1;
 
     while (true) {
         let gameData = await loadGameData(gameFilename);
@@ -219,12 +351,17 @@ async function herodraft(challenger, opponent, channel, gameFilename) {
 
         const challengerCombatImagePath = './assets/' + activeChallengerHero + 'Combat.png'
         const opponentCombatImagePath = './assets/' + activeOpponentHero + 'Combat.png'
-        const testpath = './assets/test.png'
-        const challengerImage = fs.readFileSync(challengerCombatImagePath);
-        const opponentImage = fs.readFileSync(opponentCombatImagePath);
-        const testimage = fs.readFileSync(testpath);
+        const outputCombatImagePath = './genassets/' + activeChallengerHero + '_vs_' + activeOpponentHero + 'Combat.png'
+        //const challengerImage = fs.readFileSync(challengerCombatImagePath);
+        //const opponentImage = fs.readFileSync(opponentCombatImagePath);
         const challengerEnergyBar = " [" + "⚡️".repeat(challengerEnergy) + "-".repeat(energyBarLength - challengerEnergy) + "] ";
         const opponentEnergyBar = " [" + "⚡️".repeat(opponentEnergy) + "-".repeat(energyBarLength - opponentEnergy) + "] ";
+
+        if (!fs.existsSync(outputCombatImagePath)) {
+            await combineImagesForCombat(opponentCombatImagePath, challengerCombatImagePath, outputCombatImagePath)
+        }
+
+        const outputImage = fs.readFileSync(outputCombatImagePath);
 
         const TitleEmbed = new EmbedBuilder().setTitle(`${currentPlayerName}'s Turn`)
         await channel.send({ embeds: [TitleEmbed] })
@@ -232,14 +369,16 @@ async function herodraft(challenger, opponent, channel, gameFilename) {
         const embed = new EmbedBuilder()
             .addFields(
                 { name: activeChallengerHero, value: `${challengerHealth} HP`, inline: true },
-                { name: activeOpponentHero, value: `${opponentHealth} HP`, inline: true },
                 { name: '\u200b', value: '\u200b ', inline: true }, // Add an empty field for spacing
+                { name: activeOpponentHero, value: `${opponentHealth} HP`, inline: true },
                 { name: challengerName, value: challengerEnergyBar, inline: true },
+                { name: '\u200b', value: '\u200b ', inline: true }, // Add an empty field for spacing
                 { name: opponentName, value: opponentEnergyBar, inline: true },
             )
             //.setThumbnail('attachment://' + challengerCombatImagePath) // Challenger on left
             //.setImage('attachment://' + opponentCombatImagePath);   // Opponent on right
-            .setImage('attachment://' + testpath);
+            .setImage('attachment://' + outputCombatImagePath)
+            .setTitle(`Turn ${turnCount} \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B \u200B`);
 
         const attackButton = new ButtonBuilder()
             .setLabel('Attack')
@@ -263,7 +402,7 @@ async function herodraft(challenger, opponent, channel, gameFilename) {
             embeds: [embed],
             files: [
                 //new AttachmentBuilder(challengerImage, { name:  }),
-                new AttachmentBuilder(testimage, { name: testpath })
+                new AttachmentBuilder(outputImage, { name: outputCombatImagePath })
             ],
             components: [view]
         });
@@ -276,7 +415,7 @@ async function herodraft(challenger, opponent, channel, gameFilename) {
                     return true;
                 }
             }
-            await channel.awaitMessages({ filter, max: 1, time: 60_0000, errors: ['time'] })
+            await channel.awaitMessages({ filter, max: 1, time: 600_0000, errors: ['time'] })
 
         } catch (error) {
             if (error.name === 'TimeoutError') {
