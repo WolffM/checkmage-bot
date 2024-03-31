@@ -2,12 +2,14 @@ import { saveGameData, saveGameDataFields, loadGameData } from './saveData.mjs';
 import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { swapPlayers, combineImagesForCombat, combineImagesForDraft, shuffleArray, initializeTeamFile } from './helper.mjs';
+import { combineImagesForCombat, combineImagesForDraft, shuffleArray, initializeTeamFile } from './helper.mjs';
 const str = 'Mozilla';
 
 dotenv.config();
 const TOKEN = process.env.DISCORD_TOKEN;
 let gameInProgress = false;
+let interactionsReceived, draftRound = 1;
+let currentPlayerId, otherPlayerId, otherPlayerName, currentPlayerName, challengerId, challengerName, opponentId, opponentName = '';
 
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
@@ -54,10 +56,7 @@ client.on('interactionCreate', async (interaction) => {
     else if (interaction.customId === 'herodraft_start') {
 
     } else if (interaction.customId.startsWith('draft_')) {
-        const [, choice, gameFilename] = interaction.customId.split('_'); // Extract filename
-
-        let gameData = await loadGameData(gameFilename);
-        const { currentPlayerName, currentPlayerId, draftCount } = gameData;
+        const [, choice] = interaction.customId.split('_'); // Extract filename
 
         if (interaction.user.id !== currentPlayerId) {
             await interaction.reply({ content: `It's not your turn!`, ephemeral: true });
@@ -78,27 +77,26 @@ client.on('interactionCreate', async (interaction) => {
         const teamData = JSON.parse(fs.readFileSync(teamFilename));
         teamData.team.push(selectedHero);
         fs.writeFileSync(teamFilename, JSON.stringify(teamData));
+        const components = interaction.message.components;
+        const newEmbed = new EmbedBuilder(); // Create new embed using existing data
+        newEmbed.setTitle(`${otherPlayerName}'s draft pick`);
 
-        const newPlayer = await swapPlayers(gameFilename, gameData)
-
-        if (draftCount < 1) {
-            const components = interaction.message.components;
-            const oldEmbed = interaction.message.embeds[0];
-            const newEmbed = new EmbedBuilder(oldEmbed.data); // Create new embed using existing data
-            newEmbed.setTitle(`${newPlayer}'s draft pick`);
-
+        if (interactionsReceived < 1) {
             const buttonToRemove = components[0].components.find(button => button.data.custom_id === interaction.customId);
             if (buttonToRemove) {
                 const buttonIndex = components[0].components.indexOf(buttonToRemove);
                 components[0].components.splice(buttonIndex, 1);
-                await interaction.update({ embeds: [newEmbed], components });
+                await interaction.update({embeds: [newEmbed], components:components})
             } else {
                 console.error("Couldn't find matching button to remove");
             }
         } else {
-            await interaction.update({ components: [] })
+            const embed = new EmbedBuilder()
+            .setTitle(`(draft round #${draftRound})`)
+            draftRound++
+            await interaction.update({ embeds: [embed], components: []})
+            console.log('ending interaction')
         }
-
     }
 
     else if (interaction.customId === 'herodraft_accept') {
@@ -147,16 +145,22 @@ client.on('interactionCreate', async (interaction) => {
 
         console.log('gameFilename', gameFilename)
 
-        let currentPlayerId = challenger.id;
-        let currentPlayerName = challenger.username
+        challengerId = challenger.id;
+        challengerName = challenger.username;
+        opponentId = opponent.id;
+        opponentName = opponent.username;
 
         if (Math.random() < 0.5) {
             currentPlayerId = challenger.id;
-            currentPlayerName = challenger.username
+            currentPlayerName = challenger.username;
+            otherPlayerId = opponent.id;
+            otherPlayerName = opponent.username;
             await channel.send(`${challenger.username.toString()} won the coin toss and goes first!`);
         } else {
             currentPlayerId = opponent.id;
             currentPlayerName = opponent.username
+            otherPlayerId = challenger.id;
+            otherPlayerName = challenger.username;
             await channel.send(`${opponent.username.toString()} won the coin toss and goes first!`);
         }
 
@@ -164,31 +168,24 @@ client.on('interactionCreate', async (interaction) => {
         const gameData = {
             activeChallengerHero: '',
             activeOpponentHero: '',
-            challengerId: challenger.id,
-            challengerName: challenger.username,
             challengerEnergy: 3,
-            opponentId: opponent.id,
-            opponentName: opponent.username,
             opponentEnergy: 3,
             channelId: channel.id,
             challengerHealth: 3,
             opponentHealth: 3,
-            currentPlayerId: currentPlayerId, // Start with the challenger
-            currentPlayerName: currentPlayerName
         };
 
         // Save initial game state
         await saveGameData(gameData, gameFilename);
 
         // Start the game
-        await heroDraft(challenger, opponent, channel, parseInt(draftSize), gameFilename);
+        await heroDraft(channel, parseInt(draftSize), gameFilename);
     }
 
     else if (interaction.customId.startsWith('herodraft_')) {
         const [, actionType, gameFilename] = interaction.customId.split('_'); // Extract filename
 
         let gameData = await loadGameData(gameFilename);
-        const { currentPlayerId, challengerId, currentPlayerName } = gameData;
 
         if (!gameData) {
             await interaction.reply({ content: "Could not load game data.", ephemeral: true });
@@ -208,19 +205,28 @@ client.on('interactionCreate', async (interaction) => {
                 gameData.challengerHealth -= 1;
                 console.log('reducing challenger Health')
             }
-            await swapPlayers(gameFilename, gameData)
+            swapPlayers()
             await interaction.update({ components: [] })
             await interaction.followUp(`${currentPlayerName.toString()} attacked and dealt 1 damage!`);
         }
         // **** PASS HANDLER ****
         else if (actionType === 'pass') {
-            await swapPlayers(gameFilename, gameData)
+            swapPlayers();
             await interaction.update({ components: [] })
             await interaction.followUp(`${currentPlayerName.toString()} passed their turn...`);
         }
         return
     }
 });
+
+export function swapPlayers() {
+    const tempPlayerId = currentPlayerId;
+    const tempPlayerName = currentPlayerName;
+    currentPlayerId = otherPlayerId;
+    otherPlayerId = tempPlayerId;
+    currentPlayerName = otherPlayerName;
+    otherPlayerName = tempPlayerName;
+}
 
 async function startHerodraft(message, draftSize) {
     // Create the button 
@@ -245,21 +251,21 @@ async function handleResignation(message) {
     await channel.send(`${message.author()} has resigned!`);
 }
 
-async function heroDraft(challenger, opponent, channel, draftSize, gameFilename) {
-    await channel.send(`The draft between ${challenger.username} and ${opponent.username} begins!`);
-
-    let gameData = await loadGameData(gameFilename);
-    let { opponentName, challengerName, currentPlayerId, currentPlayerName } = gameData;
+async function heroDraft(channel, draftSize, gameFilename) {
+    await channel.send(`The draft between ${challengerName} and ${opponentName} begins!`);
 
     initializeTeamFile(`./genassets/teams/${challengerName}_team.json`);
     initializeTeamFile(`./genassets/teams/${opponentName}_team.json`);
 
     // Load hero data
     const heroData = JSON.parse(fs.readFileSync('./assets/hero_data.json'));
+    const imagePromises = [];
     let draftPool = [...heroData.heroes];
+
     shuffleArray(draftPool); // Shuffle the hero pool
 
     console.log('draftsize:', draftSize)
+
 
     for (let i = 0; i < draftSize * 3; i += 3) { // Loop for each draft set
         const hero1 = draftPool[i];
@@ -271,14 +277,16 @@ async function heroDraft(challenger, opponent, channel, draftSize, gameFilename)
         const hero3Path = './assets/' + hero3.name + 'Combat.png'
         console.log(`building: './genassets/' + ${hero1.name} + '+' + ${hero2.name} + '+' + ${hero3.name} + 'Draft.png'`)
         const outputImagePath = './genassets/' + hero1.name + '+' + hero2.name + '+' + hero3.name + 'Draft.png';
-        await combineImagesForDraft(hero1Path, hero2Path, hero3Path, outputImagePath);
+        const imagePromise = combineImagesForDraft(hero1Path, hero2Path, hero3Path, outputImagePath)
+        imagePromises.push(imagePromise);
+    }
+
+    for (const imagePromise of imagePromises) {
+        const firstGeneratedImage = await imagePromise;
+        if (firstGeneratedImage) break; // Got the image
     }
 
     for (let j = 0; j < draftSize * 3; j += 3) {
-        gameData = await loadGameData(gameFilename);
-        currentPlayerId = gameData.currentPlayerId;
-        currentPlayerName = gameData.currentPlayerName;
-
         const hero1 = draftPool[j];
         const hero2 = draftPool[j + 1];
         const hero3 = draftPool[j + 2];
@@ -304,12 +312,8 @@ async function heroDraft(challenger, opponent, channel, draftSize, gameFilename)
             components: [view]
         });
 
-        // Wait for button interaction 
-        let interactionsReceived = 0;
-        await saveGameDataFields(gameFilename, { draftCount: interactionsReceived});
-
         while (interactionsReceived < 2) {
-            const filter = (i) => i.customId.startsWith('draft_');
+            const filter = (i) => i.customId.startsWith('draft_') && currentPlayerId == i.user.id;
             const buttonInteraction = await message.awaitMessageComponent({ filter, time: 600000 /* Timeout */ })
                 .catch(error => {
                     console.error('Draft timeout or error:', error);
@@ -318,26 +322,25 @@ async function heroDraft(challenger, opponent, channel, draftSize, gameFilename)
 
             if (!buttonInteraction) continue; // Timeout or error
 
+            swapPlayers()
             console.log('interactionsReceived')
-
             interactionsReceived++;
-            if (interactionsReceived < 2) {
-                await saveGameDataFields(gameFilename, { draftCount: interactionsReceived});
-            }
         }
+
+        interactionsReceived = 0;
     }
-    heroGame(challengerName, opponentName, channel, gameFilename)
+    heroGame(channel, gameFilename)
 }
 
 
-async function heroGame(challenger, opponent, channel, gameFilename) {
-    await channel.send(`The game between ${challenger} and ${opponent} begins!`);
+async function heroGame(channel, gameFilename) {
+    await channel.send(`The game between ${challengerName} and ${opponentName} begins!`);
     const energyBarLength = 10;
     let turnCount = 1;
 
     while (true) {
         let gameData = await loadGameData(gameFilename);
-        const { currentPlayerName, activeChallengerHero, activeOpponentHero, challengerEnergy, opponentEnergy, challengerHealth, challengerName, opponentHealth, opponentName, channelId } = gameData;
+        const { activeChallengerHero, activeOpponentHero, challengerEnergy, opponentEnergy, challengerHealth, opponentHealth, channelId } = gameData;
 
         if (challengerHealth <= 0) {
             await channel.send(`${challengerName} has lost!`);

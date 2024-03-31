@@ -2,26 +2,6 @@ import Jimp from 'jimp';
 import fs from 'fs';
 import { saveGameDataFields } from './saveData.mjs';
 
-
-export async function swapPlayers(gameFilename, gameData) {
-    const { currentPlayerId, challengerId, challengerName, opponentId, opponentName } = gameData; // Extract the values  
-    if (currentPlayerId === challengerId) {
-        console.log('swapping to opponent')
-        await saveGameDataFields(gameFilename, {
-            currentPlayerName: opponentName,
-            currentPlayerId: opponentId
-        });
-        return opponentName
-    } else { // Implied - If currentPlayer !== challenger, then it must be the opponent
-        console.log('swapping to challenger')
-        await saveGameDataFields(gameFilename, {
-            currentPlayerName: challengerName,
-            currentPlayerId: challengerId
-        });
-        return challengerName
-    }
-}
-
 export function initializeTeamFile(filename) {
     const teamData = { team: [] }; // Start with an empty team
     fs.writeFileSync(filename, JSON.stringify(teamData));
