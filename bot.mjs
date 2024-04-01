@@ -7,8 +7,10 @@ const str = 'Mozilla';
 
 dotenv.config();
 const TOKEN = process.env.DISCORD_TOKEN;
-let gameInProgress = false;
-let interactionsReceived, draftRound = 1;
+let gameInProgress, challengerStarterChosen, opponentStarterChosen;
+let skipDraft = true;
+let interactionsReceived = 0
+let draftRound = 1;
 let currentPlayerId, otherPlayerId, otherPlayerName, currentPlayerName, challengerId, challengerName, opponentId, opponentName = '';
 
 const client = new Client({
@@ -86,17 +88,34 @@ client.on('interactionCreate', async (interaction) => {
             if (buttonToRemove) {
                 const buttonIndex = components[0].components.indexOf(buttonToRemove);
                 components[0].components.splice(buttonIndex, 1);
-                await interaction.update({embeds: [newEmbed], components:components})
+                await interaction.update({ embeds: [newEmbed], components: components })
             } else {
                 console.error("Couldn't find matching button to remove");
             }
         } else {
             const embed = new EmbedBuilder()
-            .setTitle(`(draft round #${draftRound})`)
+                .setTitle(`(draft round #${draftRound})`)
             draftRound++
-            await interaction.update({ embeds: [embed], components: []})
+            await interaction.update({ embeds: [embed], components: [] })
             console.log('ending interaction')
         }
+    }
+
+    else if(interaction.customId.startsWith('startselect_')){
+        const [, playerId, heroName] = interaction.customId.split('_'); // Extract filename
+        console.log(`playerId + heroName + interactionid : ${playerId} + ${heroName} + ${interaction.user.id}`)
+        if (interaction.user.id !== playerId) {
+            await interaction.reply({ content: `That's not your team!`, ephemeral: true });
+            return
+        }
+        if(playerId == challengerId){
+            challengerStarterChosen = heroName;
+        } else{
+            opponentStarterChosen = heroName;
+        }
+        interactionsReceived++
+        console.log('interactionsReceived')
+        interaction.update({ content: 'Choice registered!', components: [], ephemeral: true });
     }
 
     else if (interaction.customId === 'herodraft_accept') {
@@ -252,83 +271,124 @@ async function handleResignation(message) {
 }
 
 async function heroDraft(channel, draftSize, gameFilename) {
-    await channel.send(`The draft between ${challengerName} and ${opponentName} begins!`);
+    if (!skipDraft) {
 
-    initializeTeamFile(`./genassets/teams/${challengerName}_team.json`);
-    initializeTeamFile(`./genassets/teams/${opponentName}_team.json`);
+        await channel.send(`The draft between ${challengerName} and ${opponentName} begins!`);
 
-    // Load hero data
-    const heroData = JSON.parse(fs.readFileSync('./assets/hero_data.json'));
-    const imagePromises = [];
-    let draftPool = [...heroData.heroes];
+        initializeTeamFile(`./genassets/teams/${challengerName}_team.json`);
+        initializeTeamFile(`./genassets/teams/${opponentName}_team.json`);
 
-    shuffleArray(draftPool); // Shuffle the hero pool
+        // Load hero data
+        const heroData = JSON.parse(fs.readFileSync('./assets/hero_data.json'));
+        const imagePromises = [];
+        let draftPool = [...heroData.heroes];
 
-    console.log('draftsize:', draftSize)
+        shuffleArray(draftPool); // Shuffle the hero pool
+
+        console.log('draftsize:', draftSize)
 
 
-    for (let i = 0; i < draftSize * 3; i += 3) { // Loop for each draft set
-        const hero1 = draftPool[i];
-        const hero2 = draftPool[i + 1];
-        const hero3 = draftPool[i + 2];
+        for (let i = 0; i < draftSize * 3; i += 3) { // Loop for each draft set
+            const hero1 = draftPool[i];
+            const hero2 = draftPool[i + 1];
+            const hero3 = draftPool[i + 2];
 
-        const hero1Path = './assets/' + hero1.name + 'Combat.png'
-        const hero2Path = './assets/' + hero2.name + 'Combat.png'
-        const hero3Path = './assets/' + hero3.name + 'Combat.png'
-        console.log(`building: './genassets/' + ${hero1.name} + '+' + ${hero2.name} + '+' + ${hero3.name} + 'Draft.png'`)
-        const outputImagePath = './genassets/' + hero1.name + '+' + hero2.name + '+' + hero3.name + 'Draft.png';
-        const imagePromise = combineImagesForDraft(hero1Path, hero2Path, hero3Path, outputImagePath)
-        imagePromises.push(imagePromise);
-    }
-
-    for (const imagePromise of imagePromises) {
-        const firstGeneratedImage = await imagePromise;
-        if (firstGeneratedImage) break; // Got the image
-    }
-
-    for (let j = 0; j < draftSize * 3; j += 3) {
-        const hero1 = draftPool[j];
-        const hero2 = draftPool[j + 1];
-        const hero3 = draftPool[j + 2];
-        const draftImagePath = './genassets/' + hero1.name + '+' + hero2.name + '+' + hero3.name + 'Draft.png';
-
-        const embed = new EmbedBuilder()
-            .setTitle(`${currentPlayerName}'s draft pick`)
-            .setImage('attachment://' + draftImagePath);
-
-        // Setup buttons using hero names (You'll need the images)
-        const view = new ActionRowBuilder()
-            .addComponents([
-                new ButtonBuilder().setLabel(hero1.name).setStyle(ButtonStyle.Success).setCustomId(`draft_${hero1.name}_${gameFilename}`),
-                new ButtonBuilder().setLabel(hero2.name).setStyle(ButtonStyle.Success).setCustomId(`draft_${hero2.name}_${gameFilename}`),
-                new ButtonBuilder().setLabel(hero3.name).setStyle(ButtonStyle.Success).setCustomId(`draft_${hero3.name}_${gameFilename}`)
-            ]);
-
-        const message = await channel.send({
-            embeds: [embed],
-            files: [
-                new AttachmentBuilder(fs.readFileSync(draftImagePath), { name: draftImagePath })
-            ],
-            components: [view]
-        });
-
-        while (interactionsReceived < 2) {
-            const filter = (i) => i.customId.startsWith('draft_') && currentPlayerId == i.user.id;
-            const buttonInteraction = await message.awaitMessageComponent({ filter, time: 600000 /* Timeout */ })
-                .catch(error => {
-                    console.error('Draft timeout or error:', error);
-                    return null;
-                });
-
-            if (!buttonInteraction) continue; // Timeout or error
-
-            swapPlayers()
-            console.log('interactionsReceived')
-            interactionsReceived++;
+            const hero1Path = './assets/' + hero1.name + 'Combat.png'
+            const hero2Path = './assets/' + hero2.name + 'Combat.png'
+            const hero3Path = './assets/' + hero3.name + 'Combat.png'
+            console.log(`building: './genassets/' + ${hero1.name} + '+' + ${hero2.name} + '+' + ${hero3.name} + 'Draft.png'`)
+            const outputImagePath = './genassets/' + hero1.name + '+' + hero2.name + '+' + hero3.name + 'Draft.png';
+            const imagePromise = combineImagesForDraft(hero1Path, hero2Path, hero3Path, outputImagePath)
+            imagePromises.push(imagePromise);
         }
 
-        interactionsReceived = 0;
+        for (const imagePromise of imagePromises) {
+            const firstGeneratedImage = await imagePromise;
+            if (firstGeneratedImage) break; // Got the image
+        }
+
+        for (let j = 0; j < draftSize * 3; j += 3) {
+            const hero1 = draftPool[j];
+            const hero2 = draftPool[j + 1];
+            const hero3 = draftPool[j + 2];
+            const draftImagePath = './genassets/' + hero1.name + '+' + hero2.name + '+' + hero3.name + 'Draft.png';
+
+            const embed = new EmbedBuilder()
+                .setTitle(`${currentPlayerName}'s draft pick`)
+                .setImage('attachment://' + draftImagePath);
+
+            // Setup buttons using hero names (You'll need the images)
+            const view = new ActionRowBuilder()
+                .addComponents([
+                    new ButtonBuilder().setLabel(hero1.name).setStyle(ButtonStyle.Success).setCustomId(`draft_${hero1.name}_${gameFilename}`),
+                    new ButtonBuilder().setLabel(hero2.name).setStyle(ButtonStyle.Success).setCustomId(`draft_${hero2.name}_${gameFilename}`),
+                    new ButtonBuilder().setLabel(hero3.name).setStyle(ButtonStyle.Success).setCustomId(`draft_${hero3.name}_${gameFilename}`)
+                ]);
+
+            const message = await channel.send({
+                embeds: [embed],
+                files: [
+                    new AttachmentBuilder(fs.readFileSync(draftImagePath), { name: draftImagePath })
+                ],
+                components: [view]
+            });
+
+            while (interactionsReceived < 2) {
+                const filter = (i) => i.customId.startsWith('draft_') && currentPlayerId == i.user.id;
+                const buttonInteraction = await message.awaitMessageComponent({ filter, time: 600000 /* Timeout */ })
+                    .catch(error => {
+                        console.error('Draft timeout or error:', error);
+                        return null;
+                    });
+
+                if (!buttonInteraction) continue; // Timeout or error
+
+                swapPlayers()
+                console.log('interactionsReceived')
+                interactionsReceived++;
+            }
+
+            interactionsReceived = 0;
+        }
     }
+
+    console.log('opponentId', opponentId)
+    console.log('opponentName', opponentName)
+    console.log('challengerId', challengerId)
+    console.log('challengerName', challengerName)
+
+
+    const challengerSelection = await channel.send({
+        content: `${challengerName}'s starting hero selection...`,
+        components: [
+            createHeroSelectionButtons(challengerName, challengerId, gameFilename)
+        ],
+    });
+
+    const opponentSelection = await channel.send({
+        content: `${opponentName}'s starting hero selection...`,
+        components: [
+            createHeroSelectionButtons(opponentName, opponentId, gameFilename)
+        ],
+    });
+
+    interactionsReceived = 0;
+    while (interactionsReceived < 2) {
+        const challengerButtonInteraction = await challengerSelection.awaitMessageComponent({ filter: i => i.user.id === challengerId && i.customId.startsWith('startselect_'), time: 600000 })
+        const opponentButtonInteraction = await opponentSelection.awaitMessageComponent({ filter: i => i.user.id === opponentId && i.customId.startsWith('startselect_'), time: 600000 })
+        if (!challengerButtonInteraction || !opponentButtonInteraction) continue; // Timeout or error
+    }
+
+    // At this point, you should have both choices (or a timeout has occurred)
+    if (opponentStarterChosen && challengerStarterChosen) {
+        await saveGameDataFields(gameFilename, {
+            activeChallengerHero: challengerStarterChosen,
+            activeOpponentHero: opponentStarterChosen
+        });
+    } else {
+        console.log(`failed to get both hero's ):`)
+    }
+
     heroGame(channel, gameFilename)
 }
 
@@ -430,6 +490,19 @@ async function heroGame(channel, gameFilename) {
     }
 }
 
+function createHeroSelectionButtons(playerName, playerId, gameFilename) {
+    const teamFilename = `./genassets/teams/${playerName}_team.json`;
+    const teamData = JSON.parse(fs.readFileSync(teamFilename));
+
+    const buttons = teamData.team.map(hero =>
+        new ButtonBuilder()
+            .setLabel(hero.name)
+            .setStyle(ButtonStyle.Success)
+            .setCustomId(`startselect_${playerId}_${hero.name}_${gameFilename}`)
+    );
+
+    return new ActionRowBuilder().addComponents(buttons);
+}
 
 async function calculateRollResult(rollString, message) {
     // Regular Expression (mostly unchanged)
