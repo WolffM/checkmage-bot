@@ -83,7 +83,7 @@ client.on('interactionCreate', async (interaction) => {
         const newEmbed = new EmbedBuilder(); // Create new embed using existing data
         newEmbed.setTitle(`${otherPlayerName}'s draft pick`);
 
-        if (interactionsReceived < 1) {
+        if (interactionsReceived < 2) {
             const buttonToRemove = components[0].components.find(button => button.data.custom_id === interaction.customId);
             if (buttonToRemove) {
                 const buttonIndex = components[0].components.indexOf(buttonToRemove);
