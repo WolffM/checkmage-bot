@@ -114,7 +114,7 @@ client.on('interactionCreate', async (interaction) => {
             opponentStarterChosen = heroName;
         }
         interactionsReceived++
-        console.log('interactionsReceived')
+        console.log('recieved interaction, is now:', interactionsReceived);
         interaction.update({ content: 'Choice registered!', components: [], ephemeral: true });
     }
 
@@ -218,19 +218,21 @@ client.on('interactionCreate', async (interaction) => {
         // **** ATTACK HANDLER ****
         if (actionType === 'attack') {
             if (currentPlayerId === challengerId) {
-                gameData.opponentHealth -= 1;
+                await saveGameDataFields(gameFilename, {
+                    opponentHealth: gameData.opponentHealth-1,
+                });
                 console.log('reducing opponent Health')
             } else {
-                gameData.challengerHealth -= 1;
+                await saveGameDataFields(gameFilename, {
+                    challengerHealth: gameData.challengerHealth-1,
+                });
                 console.log('reducing challenger Health')
             }
-            swapPlayers()
             await interaction.update({ components: [] })
             await interaction.followUp(`${currentPlayerName.toString()} attacked and dealt 1 damage!`);
         }
         // **** PASS HANDLER ****
         else if (actionType === 'pass') {
-            swapPlayers();
             await interaction.update({ components: [] })
             await interaction.followUp(`${currentPlayerName.toString()} passed their turn...`);
         }
@@ -376,7 +378,6 @@ async function heroDraft(channel, draftSize, gameFilename) {
     while (interactionsReceived < 2) {
         const challengerButtonInteraction = await challengerSelection.awaitMessageComponent({ filter: i => i.user.id === challengerId && i.customId.startsWith('startselect_'), time: 600000 })
         const opponentButtonInteraction = await opponentSelection.awaitMessageComponent({ filter: i => i.user.id === opponentId && i.customId.startsWith('startselect_'), time: 600000 })
-        if (!challengerButtonInteraction || !opponentButtonInteraction) continue; // Timeout or error
     }
 
     // At this point, you should have both choices (or a timeout has occurred)
@@ -399,6 +400,8 @@ async function heroGame(channel, gameFilename) {
     let turnCount = 1;
 
     while (true) {
+        turnCount++
+        swapPlayers()
         let gameData = await loadGameData(gameFilename);
         const { activeChallengerHero, activeOpponentHero, challengerEnergy, opponentEnergy, challengerHealth, opponentHealth, channelId } = gameData;
 
@@ -415,8 +418,6 @@ async function heroGame(channel, gameFilename) {
         const challengerCombatImagePath = './assets/' + activeChallengerHero + 'Combat.png'
         const opponentCombatImagePath = './assets/' + activeOpponentHero + 'Combat.png'
         const outputCombatImagePath = './genassets/' + activeChallengerHero + '_vs_' + activeOpponentHero + 'Combat.png'
-        //const challengerImage = fs.readFileSync(challengerCombatImagePath);
-        //const opponentImage = fs.readFileSync(opponentCombatImagePath);
         const challengerEnergyBar = " [" + "⚡️".repeat(challengerEnergy) + "-".repeat(energyBarLength - challengerEnergy) + "] ";
         const opponentEnergyBar = " [" + "⚡️".repeat(opponentEnergy) + "-".repeat(energyBarLength - opponentEnergy) + "] ";
 
