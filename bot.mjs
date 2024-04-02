@@ -2,14 +2,14 @@ import { saveGameData, saveGameDataFields, loadGameData } from './saveData.mjs';
 import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { combineImagesForCombat, combineImagesForDraft, shuffleArray, initializeTeamFile } from './helper.mjs';
+import { combineImagesForCombat, combineImagesForDraft, shuffleArray, initializeTeamFile, delay } from './helper.mjs';
 const str = 'Mozilla';
 
 dotenv.config();
 const TOKEN = process.env.DISCORD_TOKEN;
 let gameInProgress, challengerStarterChosen, opponentStarterChosen;
 let skipDraft = true;
-let interactionsReceived = 0
+let interactionsReceived = 0;
 let draftRound = 1;
 let currentPlayerId, otherPlayerId, otherPlayerName, currentPlayerName, challengerId, challengerName, opponentId, opponentName = '';
 
@@ -101,19 +101,48 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    else if(interaction.customId.startsWith('startselect_')){
+    else if (interaction.customId.startsWith('startselect_')) {
         const [, playerId, heroName] = interaction.customId.split('_'); // Extract filename
         console.log(`playerId + heroName + interactionid : ${playerId} + ${heroName} + ${interaction.user.id}`)
         if (interaction.user.id !== playerId) {
             await interaction.reply({ content: `That's not your team!`, ephemeral: true });
             return
         }
-        if(playerId == challengerId){
+        if (playerId == challengerId) {
             challengerStarterChosen = heroName;
-        } else{
+        } else {
             opponentStarterChosen = heroName;
         }
         interactionsReceived++
+        console.log('recieved interaction');
+        interaction.update({ content: 'Choice registered!', components: [], ephemeral: true });
+    }
+
+    else if (interaction.customId.startsWith('switchselect_')) {
+        const [, playerId, heroName, gameFilename] = interaction.customId.split('_'); // Extract filename
+        console.log(`playerId + heroName + interactionid : ${playerId} + ${heroName} + ${interaction.user.id}`)
+
+        if(playerId === 'dead'){
+            await interaction.reply({ content: `You can't switch into defeated heroes!`, ephemeral: true });
+            return
+        }
+        else if(playerId === 'active'){
+            await interaction.reply({ content: `That hero is already active!`, ephemeral: true });
+            return
+        }
+        else if (interaction.user.id !== playerId) {
+            await interaction.reply({ content: `That's not your team!`, ephemeral: true });
+            return
+        }
+        else if (playerId == challengerId) {
+            await saveGameDataFields(gameFilename, {
+                activeChallengerHero: heroName
+            });
+        } else {
+            await saveGameDataFields(gameFilename, {
+                activeOpponentHero: heroName
+            });
+        }
         console.log('recieved interaction, is now:', interactionsReceived);
         interaction.update({ content: 'Choice registered!', components: [], ephemeral: true });
     }
@@ -219,22 +248,41 @@ client.on('interactionCreate', async (interaction) => {
         if (actionType === 'attack') {
             if (currentPlayerId === challengerId) {
                 await saveGameDataFields(gameFilename, {
-                    opponentHealth: gameData.opponentHealth-1,
+                    opponentHealth: gameData.opponentHealth - 1,
                 });
                 console.log('reducing opponent Health')
             } else {
                 await saveGameDataFields(gameFilename, {
-                    challengerHealth: gameData.challengerHealth-1,
+                    challengerHealth: gameData.challengerHealth - 1,
                 });
                 console.log('reducing challenger Health')
             }
             await interaction.update({ components: [] })
             await interaction.followUp(`${currentPlayerName.toString()} attacked and dealt 1 damage!`);
         }
-        // **** PASS HANDLER ****
-        else if (actionType === 'pass') {
+        // **** SWITCH HANDLER ****
+        else if (actionType === 'switch') {
             await interaction.update({ components: [] })
-            await interaction.followUp(`${currentPlayerName.toString()} passed their turn...`);
+            let activeHeroName = '';
+            if (currentPlayerId === challengerId) {
+                activeHeroName = gameData.activeChallengerHero
+            } else {
+                activeHeroName = gameData.activeOpponentHero
+            }
+            const switchSelection = await interaction.channel.send({
+                content: `${currentPlayerName}'s switch selection...`,
+                components: [
+                    createHeroSelectionButtons(currentPlayerName, currentPlayerId, gameFilename, true, activeHeroName)
+                ],
+            });
+
+            const switchSelectionInteraction = await switchSelection.awaitMessageComponent({ filter: i => i.user.id === currentPlayerId && i.customId.startsWith('switchselect'), time: 600000 })
+            
+            await interaction.followUp(`${currentPlayerName.toString()} switched out their active hero!`);
+        }
+        // **** ABILITY HANDLER ****
+        else if (actionType === 'ability') {
+            console.log('not implemented')
         }
         return
     }
@@ -335,6 +383,7 @@ async function heroDraft(channel, draftSize, gameFilename) {
                 components: [view]
             });
 
+            interactionsReceived = 0;
             while (interactionsReceived < 2) {
                 const filter = (i) => i.customId.startsWith('draft_') && currentPlayerId == i.user.id;
                 const buttonInteraction = await message.awaitMessageComponent({ filter, time: 600000 /* Timeout */ })
@@ -349,8 +398,6 @@ async function heroDraft(channel, draftSize, gameFilename) {
                 console.log('interactionsReceived')
                 interactionsReceived++;
             }
-
-            interactionsReceived = 0;
         }
     }
 
@@ -374,11 +421,10 @@ async function heroDraft(channel, draftSize, gameFilename) {
         ],
     });
 
-    interactionsReceived = 0;
-    while (interactionsReceived < 2) {
-        const challengerButtonInteraction = await challengerSelection.awaitMessageComponent({ filter: i => i.user.id === challengerId && i.customId.startsWith('startselect_'), time: 600000 })
-        const opponentButtonInteraction = await opponentSelection.awaitMessageComponent({ filter: i => i.user.id === opponentId && i.customId.startsWith('startselect_'), time: 600000 })
-    }
+    const [challengerButtonInteraction, opponentButtonInteraction] = await Promise.all([
+        challengerSelection.awaitMessageComponent({ filter: i => i.user.id === challengerId && i.customId.startsWith('startselect_'), time: 600000 }),
+        opponentSelection.awaitMessageComponent({ filter: i => i.user.id === opponentId && i.customId.startsWith('startselect_'), time: 600000 })
+    ]);
 
     // At this point, you should have both choices (or a timeout has occurred)
     if (opponentStarterChosen && challengerStarterChosen) {
@@ -392,7 +438,6 @@ async function heroDraft(channel, draftSize, gameFilename) {
 
     heroGame(channel, gameFilename)
 }
-
 
 async function heroGame(channel, gameFilename) {
     await channel.send(`The game between ${challengerName} and ${opponentName} begins!`);
@@ -475,7 +520,8 @@ async function heroGame(channel, gameFilename) {
         try {
             const filter = (m) => {
                 if (m.author.username.includes('checkmage-bot') &&
-                    m.channelId.includes(channelId)) {
+                    m.channelId.includes(channelId) &&
+                    !m.content.includes('switch selection...')) {
                     return true;
                 }
             }
@@ -491,22 +537,58 @@ async function heroGame(channel, gameFilename) {
     }
 }
 
-function createHeroSelectionButtons(playerName, playerId, gameFilename) {
+function createHeroSelectionButtons(playerName, playerId, gameFilename, isSwitch = false, activeHeroName = '') {
     const teamFilename = `./genassets/teams/${playerName}_team.json`;
     const teamData = JSON.parse(fs.readFileSync(teamFilename));
 
-    const buttons = teamData.team.map(hero =>
-        new ButtonBuilder()
-            .setLabel(hero.name)
-            .setStyle(ButtonStyle.Success)
-            .setCustomId(`startselect_${playerId}_${hero.name}_${gameFilename}`)
-    );
+    const customIdLabel = isSwitch ? 'switchselect' : 'startselect';
 
+    
+
+    let buttons = teamData.team
+        .filter(hero => !isSwitch || (!hero.name.includes(activeHeroName) && hero.isAlive === true))
+        .map(hero =>
+            new ButtonBuilder()
+                .setLabel(hero.name)
+                .setStyle(ButtonStyle.Success)
+                .setCustomId(`${customIdLabel}_${playerId}_${hero.name}_${gameFilename}`)
+        );
+    console.log('buttons', buttons)
+
+    if (isSwitch) {
+        console.log('activeHeroName', activeHeroName)
+        const deadHeroes = teamData.team
+            .filter(hero => (hero.isAlive === false))
+            .map(hero =>
+                new ButtonBuilder()
+                    .setLabel(hero.name)
+                    .setStyle(ButtonStyle.Danger)
+                    .setCustomId(`${customIdLabel}_dead_${playerId}_${hero.name}_${gameFilename}`)
+            );
+
+        const activeHero = teamData.team
+            .filter(hero => (hero.name.includes(activeHeroName) && hero.isAlive === true))
+            .map(hero =>
+                new ButtonBuilder()
+                    .setLabel(hero.name)
+                    .setStyle(ButtonStyle.Primary)
+                    .setCustomId(`${customIdLabel}_active_${playerId}_${hero.name}_${gameFilename}`)
+            );
+
+        if (activeHero.length > 0) {
+            buttons.push(...activeHero);
+        }
+        if (deadHeroes.length > 0) {
+            buttons.push(...deadHeroes);
+        }
+    }
+
+    console.log('buttons together', buttons)
+    
     return new ActionRowBuilder().addComponents(buttons);
 }
 
 async function calculateRollResult(rollString, message) {
-    // Regular Expression (mostly unchanged)
     const dicePattern = /(\d+d\d+)(?:\s*(\+|-)\s*(\d+d\d+|\d+))?/g;
 
     let longMess = false;

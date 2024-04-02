@@ -7,6 +7,10 @@ export function initializeTeamFile(filename) {
     fs.writeFileSync(filename, JSON.stringify(teamData));
 }
 
+export function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms)); 
+  }
+
 export async function combineImagesForCombat(imagePath1, imagePath2, outputImagePath) {
     try {
         const [image1, image2, backgroundImage] = await Promise.all([
