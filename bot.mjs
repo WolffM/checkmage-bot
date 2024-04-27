@@ -2,7 +2,7 @@ import { saveGameData, saveGameDataFields, loadGameData } from './saveData.mjs';
 import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { combineImagesForCombat, combineImagesForDraft, shuffleArray, initializeTeamFile, delay } from './helper.mjs';
+import { combineImagesForCombat, combineImagesForDraft, shuffleArray, delay } from './helper.mjs';
 const str = 'Mozilla';
 
 dotenv.config();
@@ -11,7 +11,7 @@ let gameInProgress, challengerStarterChosen, opponentStarterChosen;
 let skipDraft = true;
 let interactionsReceived = 0;
 let draftRound = 1;
-let currentPlayerId, otherPlayerId, otherPlayerName, currentPlayerName, challengerId, challengerName, opponentId, opponentName = '';
+let challengerTeamName, opponentTeamName, currentPlayerId, otherPlayerId, otherPlayerName, currentPlayerName, challengerId, challengerName, opponentId, opponentName = '';
 
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
@@ -74,11 +74,15 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // Load team file
-        const teamFilename = `./genassets/teams/${currentPlayerName}_team.json`;
-        const teamData = JSON.parse(fs.readFileSync(teamFilename));
-        teamData.team.push(selectedHero);
-        fs.writeFileSync(teamFilename, JSON.stringify(teamData));
+
+        let gameData = await loadGameData('savedgames', gameFilename);
+        currentPlayerTeam = currentPlayerName + 'Team';
+        gameData[currentPlayerTeam].push(selectedHero)
+
+        await saveGameDataFields(gameFilename, {
+            [currentPlayerTeam]: gameData[currentPlayerTeam]
+        });
+
         const components = interaction.message.components;
         const newEmbed = new EmbedBuilder(); // Create new embed using existing data
         newEmbed.setTitle(`${otherPlayerName}'s draft pick`);
@@ -120,13 +124,14 @@ client.on('interactionCreate', async (interaction) => {
 
     else if (interaction.customId.startsWith('switchselect_')) {
         const [, playerId, heroName, gameFilename] = interaction.customId.split('_'); // Extract filename
+
         console.log(`playerId + heroName + interactionid : ${playerId} + ${heroName} + ${interaction.user.id}`)
 
-        if(playerId === 'dead'){
+        if (playerId === 'dead') {
             await interaction.reply({ content: `You can't switch into defeated heroes!`, ephemeral: true });
             return
         }
-        else if(playerId === 'active'){
+        else if (playerId === 'active') {
             await interaction.reply({ content: `That hero is already active!`, ephemeral: true });
             return
         }
@@ -134,16 +139,13 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: `That's not your team!`, ephemeral: true });
             return
         }
-        else if (playerId == challengerId) {
-            await saveGameDataFields(gameFilename, {
-                activeChallengerHero: heroName
-            });
+        let gameData = await loadGameData('savedgames', gameFilename);
+        if (playerId == challengerId) {
+            await updateActiveHero(gameData, gameFilename, heroName, true); 
         } else {
-            await saveGameDataFields(gameFilename, {
-                activeOpponentHero: heroName
-            });
+            await updateActiveHero(gameData, gameFilename, heroName, false);
         }
-        console.log('recieved interaction, is now:', interactionsReceived);
+         ++
         interaction.update({ content: 'Choice registered!', components: [], ephemeral: true });
     }
 
@@ -184,7 +186,7 @@ client.on('interactionCreate', async (interaction) => {
         const dateString = now.toISOString().substring(0, 10); // YYYY-MM-DD format
         do {
             gameFilename = `${dateString}-${gameCounter}-${challenger.username}-vs-${opponent.username}.json`;
-            if (fs.existsSync(`savedgames/${gameFilename}`)) {
+            if (fs.existsSync(`genassets/savedgames/${gameFilename}`)) {
                 gameCounter++;
             } else {
                 break; // Found a unique filename
@@ -197,6 +199,9 @@ client.on('interactionCreate', async (interaction) => {
         challengerName = challenger.username;
         opponentId = opponent.id;
         opponentName = opponent.username;
+
+        challengerTeamName = challengerName + 'Team'
+        opponentTeamName = opponentName + 'Team'
 
         if (Math.random() < 0.5) {
             currentPlayerId = challenger.id;
@@ -214,13 +219,13 @@ client.on('interactionCreate', async (interaction) => {
 
         // Initialize game data
         const gameData = {
-            activeChallengerHero: '',
-            activeOpponentHero: '',
+            activeChallengerHero: {},
+            activeOpponentHero: {},
+            [challengerTeamName]: [],
+            [opponentTeamName]: [],
             challengerEnergy: 3,
             opponentEnergy: 3,
             channelId: channel.id,
-            challengerHealth: 3,
-            opponentHealth: 3,
         };
 
         // Save initial game state
@@ -233,7 +238,7 @@ client.on('interactionCreate', async (interaction) => {
     else if (interaction.customId.startsWith('herodraft_')) {
         const [, actionType, gameFilename] = interaction.customId.split('_'); // Extract filename
 
-        let gameData = await loadGameData(gameFilename);
+        let gameData = await loadGameData('savedgames', gameFilename);
 
         if (!gameData) {
             await interaction.reply({ content: "Could not load game data.", ephemeral: true });
@@ -246,39 +251,41 @@ client.on('interactionCreate', async (interaction) => {
         }
         // **** ATTACK HANDLER ****
         if (actionType === 'attack') {
+            let activeChallengerHero = gameData.activeChallengerHero
+            let activeOpponentHero = gameData.activeOpponentHero
+            let damageDealt = 0;
+            let currentHeroName = '';
+
             if (currentPlayerId === challengerId) {
+                activeOpponentHero.currentHealth -= 100
+                if(activeOpponentHero.currentHealth <= 0 ){
+                    activeOpponentHero.isAlive = false;   
+                }
+                damageDealt = activeChallengerHero.damage
+                currentHeroName = activeChallengerHero.name
                 await saveGameDataFields(gameFilename, {
-                    opponentHealth: gameData.opponentHealth - 1,
+                    activeOpponentHero: activeOpponentHero
                 });
                 console.log('reducing opponent Health')
             } else {
+                activeChallengerHero.currentHealth -= 100
+                if(activeChallengerHero.currentHealth <= 0 ){
+                    activeChallengerHero.isAlive = false;   
+                }
+                damageDealt = activeOpponentHero.damage
+                currentHeroName = activeOpponentHero.name
                 await saveGameDataFields(gameFilename, {
-                    challengerHealth: gameData.challengerHealth - 1,
+                    activeChallengerHero: activeChallengerHero
                 });
                 console.log('reducing challenger Health')
             }
             await interaction.update({ components: [] })
-            await interaction.followUp(`${currentPlayerName.toString()} attacked and dealt 1 damage!`);
+            await interaction.followUp(`${currentHeroName} attacked and dealt ${damageDealt} damage!`);
         }
         // **** SWITCH HANDLER ****
         else if (actionType === 'switch') {
             await interaction.update({ components: [] })
-            let activeHeroName = '';
-            if (currentPlayerId === challengerId) {
-                activeHeroName = gameData.activeChallengerHero
-            } else {
-                activeHeroName = gameData.activeOpponentHero
-            }
-            const switchSelection = await interaction.channel.send({
-                content: `${currentPlayerName}'s switch selection...`,
-                components: [
-                    createHeroSelectionButtons(currentPlayerName, currentPlayerId, gameFilename, true, activeHeroName)
-                ],
-            });
-
-            const switchSelectionInteraction = await switchSelection.awaitMessageComponent({ filter: i => i.user.id === currentPlayerId && i.customId.startsWith('switchselect'), time: 600000 })
-            
-            await interaction.followUp(`${currentPlayerName.toString()} switched out their active hero!`);
+            handleHeroSwitch(gameData, currentPlayerName, currentPlayerId, gameFilename, interaction, false)
         }
         // **** ABILITY HANDLER ****
         else if (actionType === 'ability') {
@@ -295,6 +302,41 @@ export function swapPlayers() {
     otherPlayerId = tempPlayerId;
     currentPlayerName = otherPlayerName;
     otherPlayerName = tempPlayerName;
+}
+
+async function handleHeroSwitch(gameData, playerName, playerId, gameFilename, interaction, forceSwitch = true) {
+    let activeHeroName = '';
+    let channel = forceSwitch ? client.channels.cache.get(gameData.channelId) : '';
+
+    if (playerId === challengerId) {
+        activeHeroName = gameData.activeChallengerHero.name;
+    } else {
+        activeHeroName = gameData.activeOpponentHero.name;
+    }
+
+    const switchSelection = forceSwitch ? await channel.send({
+        content: `${playerName}'s switch selection...`,
+        components: [
+            createHeroSelectionButtons(gameData, playerName, playerId, gameFilename, true, activeHeroName)
+        ],
+    }) : await interaction.channel.send({
+        content: `${playerName}'s switch selection...`,
+        components: [
+            createHeroSelectionButtons(gameData, playerName, playerId, gameFilename, true, activeHeroName)
+        ],
+    });
+
+    interactionsReceived = 0;
+    while (interactionsReceived < 1) {
+        console.log(`interactions are at: ${interactionsReceived}`);
+        const switchSelectionInteraction = await switchSelection.awaitMessageComponent({ filter: i => i.user.id === playerId && i.customId.startsWith('switchselect'), time: 600000 });
+    }
+
+    console.log('completed switch');
+    
+    if(!forceSwitch){
+        await interaction.followUp(`${playerName.toString()} switched out their active hero!`);
+    }
 }
 
 async function startHerodraft(message, draftSize) {
@@ -321,22 +363,17 @@ async function handleResignation(message) {
 }
 
 async function heroDraft(channel, draftSize, gameFilename) {
+    const heroData = JSON.parse(fs.readFileSync('./assets/hero_data.json'));
+    const imagePromises = [];
+    let draftPool = [...heroData.heroes];
+
+    shuffleArray(draftPool); // Shuffle the hero pool
+
+    console.log('draftsize:', draftSize)
+
     if (!skipDraft) {
 
         await channel.send(`The draft between ${challengerName} and ${opponentName} begins!`);
-
-        initializeTeamFile(`./genassets/teams/${challengerName}_team.json`);
-        initializeTeamFile(`./genassets/teams/${opponentName}_team.json`);
-
-        // Load hero data
-        const heroData = JSON.parse(fs.readFileSync('./assets/hero_data.json'));
-        const imagePromises = [];
-        let draftPool = [...heroData.heroes];
-
-        shuffleArray(draftPool); // Shuffle the hero pool
-
-        console.log('draftsize:', draftSize)
-
 
         for (let i = 0; i < draftSize * 3; i += 3) { // Loop for each draft set
             const hero1 = draftPool[i];
@@ -346,8 +383,8 @@ async function heroDraft(channel, draftSize, gameFilename) {
             const hero1Path = './assets/' + hero1.name + 'Combat.png'
             const hero2Path = './assets/' + hero2.name + 'Combat.png'
             const hero3Path = './assets/' + hero3.name + 'Combat.png'
-            console.log(`building: './genassets/' + ${hero1.name} + '+' + ${hero2.name} + '+' + ${hero3.name} + 'Draft.png'`)
-            const outputImagePath = './genassets/' + hero1.name + '+' + hero2.name + '+' + hero3.name + 'Draft.png';
+            console.log(`building: './genassets/images/draft/' + ${hero1.name} + '+' + ${hero2.name} + '+' + ${hero3.name} + 'Draft.png'`)
+            const outputImagePath = './genassets/images/draft/' + hero1.name + '+' + hero2.name + '+' + hero3.name + 'Draft.png';
             const imagePromise = combineImagesForDraft(hero1Path, hero2Path, hero3Path, outputImagePath)
             imagePromises.push(imagePromise);
         }
@@ -361,7 +398,7 @@ async function heroDraft(channel, draftSize, gameFilename) {
             const hero1 = draftPool[j];
             const hero2 = draftPool[j + 1];
             const hero3 = draftPool[j + 2];
-            const draftImagePath = './genassets/' + hero1.name + '+' + hero2.name + '+' + hero3.name + 'Draft.png';
+            const draftImagePath = './genassets/images/draft/' + hero1.name + '+' + hero2.name + '+' + hero3.name + 'Draft.png';
 
             const embed = new EmbedBuilder()
                 .setTitle(`${currentPlayerName}'s draft pick`)
@@ -398,9 +435,28 @@ async function heroDraft(channel, draftSize, gameFilename) {
                 console.log('interactionsReceived')
                 interactionsReceived++;
             }
+            swapPlayers()
         }
+    } else {
+        const challengerTeam = [];
+        const opponentTeam = [];
+
+        for (let i = 0; i < draftSize * 2; i++) {
+            const hero = draftPool.pop(); // Remove the last hero from draftPool
+            if (i < draftSize) {
+                challengerTeam.push(hero);
+            } else {
+                opponentTeam.push(hero);
+            }
+        }
+
+        await saveGameDataFields(gameFilename, {
+            [challengerTeamName]: challengerTeam,
+            [opponentTeamName]: opponentTeam
+        });
     }
 
+    let gameData = await loadGameData('savedgames', gameFilename);
     console.log('opponentId', opponentId)
     console.log('opponentName', opponentName)
     console.log('challengerId', challengerId)
@@ -410,14 +466,14 @@ async function heroDraft(channel, draftSize, gameFilename) {
     const challengerSelection = await channel.send({
         content: `${challengerName}'s starting hero selection...`,
         components: [
-            createHeroSelectionButtons(challengerName, challengerId, gameFilename)
+            createHeroSelectionButtons(gameData, challengerName, challengerId, gameFilename)
         ],
     });
 
     const opponentSelection = await channel.send({
         content: `${opponentName}'s starting hero selection...`,
         components: [
-            createHeroSelectionButtons(opponentName, opponentId, gameFilename)
+            createHeroSelectionButtons(gameData, opponentName, opponentId, gameFilename)
         ],
     });
 
@@ -426,12 +482,21 @@ async function heroDraft(channel, draftSize, gameFilename) {
         opponentSelection.awaitMessageComponent({ filter: i => i.user.id === opponentId && i.customId.startsWith('startselect_'), time: 600000 })
     ]);
 
-    // At this point, you should have both choices (or a timeout has occurred)
     if (opponentStarterChosen && challengerStarterChosen) {
+        const challengerHero = gameData[challengerTeamName].find(hero => hero.name === challengerStarterChosen);
+        const opponentHero = gameData[opponentTeamName].find(hero => hero.name === opponentStarterChosen);
+
+        gameData[challengerTeamName] = gameData[challengerTeamName].filter(hero => hero.name !== challengerStarterChosen);
+        gameData[opponentTeamName] = gameData[opponentTeamName].filter(hero => hero.name !== opponentStarterChosen);
+
+        // Save the updated game data (no changes needed here)
         await saveGameDataFields(gameFilename, {
-            activeChallengerHero: challengerStarterChosen,
-            activeOpponentHero: opponentStarterChosen
+            activeChallengerHero: challengerHero,
+            activeOpponentHero: opponentHero,
+            [challengerTeamName]: gameData[challengerTeamName],
+            [opponentTeamName]: gameData[opponentTeamName]
         });
+
     } else {
         console.log(`failed to get both hero's ):`)
     }
@@ -439,30 +504,70 @@ async function heroDraft(channel, draftSize, gameFilename) {
     heroGame(channel, gameFilename)
 }
 
+async function updateActiveHero(gameData, gameFilename, heroName, isChallenger) {
+    const teamName = isChallenger ? challengerTeamName : opponentTeamName;
+    const activeHeroProperty = isChallenger ? 'activeChallengerHero' : 'activeOpponentHero';
+
+    // Bench current active hero
+    gameData[teamName].push(gameData[activeHeroProperty]);
+
+    // Get new active hero
+    const updatedActiveHero = gameData[teamName].find(hero => hero.name === heroName);
+
+    // Remove new active hero from bench
+    gameData[teamName] = gameData[teamName].filter(hero => hero.name !== heroName); 
+
+    // Save updated game data
+    await saveGameDataFields(gameFilename, {
+        [activeHeroProperty]: updatedActiveHero,
+        [teamName]: gameData[teamName]
+    });
+    
+}
 async function heroGame(channel, gameFilename) {
     await channel.send(`The game between ${challengerName} and ${opponentName} begins!`);
     const energyBarLength = 10;
     let turnCount = 1;
 
     while (true) {
+        delay(1000)
         turnCount++
         swapPlayers()
-        let gameData = await loadGameData(gameFilename);
-        const { activeChallengerHero, activeOpponentHero, challengerEnergy, opponentEnergy, challengerHealth, opponentHealth, channelId } = gameData;
+        let gameData = await loadGameData('savedgames', gameFilename);
 
-        if (challengerHealth <= 0) {
-            await channel.send(`${challengerName} has lost!`);
-            gameInProgress = false
-            break;
-        } else if (opponentHealth <= 0) {
-            await channel.send(`${opponentName} has lost!`);
-            gameInProgress = false;
-            break;
+        let activeChallengerHero = gameData.activeChallengerHero;
+        let activeOpponentHero = gameData.activeOpponentHero;
+        const { challengerEnergy, opponentEnergy, channelId } = gameData;
+
+        if (activeChallengerHero.currentHealth <= 0) {
+            await channel.send(`${activeChallengerHero.name} has been defeated...`);
+            if (!(gameData[challengerTeamName].find(hero => hero.isAlive === true))) {
+                await channel.send(`${challengerName} has lost!`);
+                gameInProgress = false
+                break;
+            } else {
+                console.log('')
+                await handleHeroSwitch(gameData, challengerName, challengerId, gameFilename, null)
+                turnCount--
+                continue
+            }
+        }
+        if (activeOpponentHero.currentHealth <= 0) {
+            await channel.send(`${activeOpponentHero.name} has been defeated...`);
+            if (!(gameData[opponentTeamName].find(hero => hero.isAlive === true))) {
+                await channel.send(`${opponentName} has lost!`);
+                gameInProgress = false;
+                break;
+            } else {
+                await handleHeroSwitch(gameData, opponentName, opponentId, gameFilename, null)
+                turnCount--
+                continue
+            }
         }
 
-        const challengerCombatImagePath = './assets/' + activeChallengerHero + 'Combat.png'
-        const opponentCombatImagePath = './assets/' + activeOpponentHero + 'Combat.png'
-        const outputCombatImagePath = './genassets/' + activeChallengerHero + '_vs_' + activeOpponentHero + 'Combat.png'
+        const challengerCombatImagePath = './assets/' + activeChallengerHero.name + 'Combat.png'
+        const opponentCombatImagePath = './assets/' + activeOpponentHero.name + 'Combat.png'
+        const outputCombatImagePath = './genassets/images/combat/' + activeChallengerHero.name + '_vs_' + activeOpponentHero.name + 'Combat.png'
         const challengerEnergyBar = " [" + "⚡️".repeat(challengerEnergy) + "-".repeat(energyBarLength - challengerEnergy) + "] ";
         const opponentEnergyBar = " [" + "⚡️".repeat(opponentEnergy) + "-".repeat(energyBarLength - opponentEnergy) + "] ";
 
@@ -477,9 +582,9 @@ async function heroGame(channel, gameFilename) {
 
         const embed = new EmbedBuilder()
             .addFields(
-                { name: activeChallengerHero, value: `${challengerHealth} HP`, inline: true },
+                { name: activeChallengerHero.name, value: `${activeChallengerHero.currentHealth} HP`, inline: true },
                 { name: '\u200b', value: '\u200b ', inline: true }, // Add an empty field for spacing
-                { name: activeOpponentHero, value: `${opponentHealth} HP`, inline: true },
+                { name: activeOpponentHero.name, value: `${activeOpponentHero.currentHealth} HP`, inline: true },
                 { name: challengerName, value: challengerEnergyBar, inline: true },
                 { name: '\u200b', value: '\u200b ', inline: true }, // Add an empty field for spacing
                 { name: opponentName, value: opponentEnergyBar, inline: true },
@@ -537,15 +642,11 @@ async function heroGame(channel, gameFilename) {
     }
 }
 
-function createHeroSelectionButtons(playerName, playerId, gameFilename, isSwitch = false, activeHeroName = '') {
-    const teamFilename = `./genassets/teams/${playerName}_team.json`;
-    const teamData = JSON.parse(fs.readFileSync(teamFilename));
-
+function createHeroSelectionButtons(gameData, playerName, playerId, gameFilename, isSwitch = false, activeHeroName = '') {
+    const teamData = gameData[playerName + 'Team']
     const customIdLabel = isSwitch ? 'switchselect' : 'startselect';
 
-    
-
-    let buttons = teamData.team
+    let buttons = teamData
         .filter(hero => !isSwitch || (!hero.name.includes(activeHeroName) && hero.isAlive === true))
         .map(hero =>
             new ButtonBuilder()
@@ -553,11 +654,9 @@ function createHeroSelectionButtons(playerName, playerId, gameFilename, isSwitch
                 .setStyle(ButtonStyle.Success)
                 .setCustomId(`${customIdLabel}_${playerId}_${hero.name}_${gameFilename}`)
         );
-    console.log('buttons', buttons)
 
     if (isSwitch) {
-        console.log('activeHeroName', activeHeroName)
-        const deadHeroes = teamData.team
+        const deadHeroes = teamData
             .filter(hero => (hero.isAlive === false))
             .map(hero =>
                 new ButtonBuilder()
@@ -566,7 +665,7 @@ function createHeroSelectionButtons(playerName, playerId, gameFilename, isSwitch
                     .setCustomId(`${customIdLabel}_dead_${playerId}_${hero.name}_${gameFilename}`)
             );
 
-        const activeHero = teamData.team
+        const activeHero = teamData
             .filter(hero => (hero.name.includes(activeHeroName) && hero.isAlive === true))
             .map(hero =>
                 new ButtonBuilder()
@@ -583,8 +682,6 @@ function createHeroSelectionButtons(playerName, playerId, gameFilename, isSwitch
         }
     }
 
-    console.log('buttons together', buttons)
-    
     return new ActionRowBuilder().addComponents(buttons);
 }
 
@@ -672,7 +769,7 @@ async function calculateTriviaStats(channel) {
     const triviaBotId = '...'; // Replace '...' with the actual ID of your Trivia Bot
 
     try {
-        const messages = await channel.messages.fetch({ limit: 10 }); // Fetch recent messages
+        const messages = await channel.messages.fetch({ limit: 1000 }); // Fetch recent messages
 
         for (const message of messages.values()) {
             if (message.author.id !== triviaBotId) continue; // Check if it's the trivia bot
@@ -680,7 +777,7 @@ async function calculateTriviaStats(channel) {
             const referencedMessage = await message.fetchReference();
             if (!referencedMessage) continue;
 
-            const username = referencedMessage.content.split(' ')[0];
+            const username = referencedMessage.content.split(' ')[1];
 
             if (!userScores[username]) {
                 userScores[username] = { correct: 0, total: 0 };

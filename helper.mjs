@@ -2,11 +2,6 @@ import Jimp from 'jimp';
 import fs from 'fs';
 import { saveGameDataFields } from './saveData.mjs';
 
-export function initializeTeamFile(filename) {
-    const teamData = { team: [] }; // Start with an empty team
-    fs.writeFileSync(filename, JSON.stringify(teamData));
-}
-
 export function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms)); 
   }
@@ -68,7 +63,6 @@ export function shuffleArray(array) {
     }
 }
 
-// Example usage:
 const heroes = [
     {
         name: "Kitsune",

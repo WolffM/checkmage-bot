@@ -6,9 +6,9 @@ export async function saveGameData(gameData, filename) {
     const jsonString = JSON.stringify(gameData);
 
     try {
-        await fs.mkdir('savedgames', { recursive: true });
+        await fs.mkdir('genassets/savedgames', { recursive: true });
 
-        const filePath = 'savedgames/' + filename;
+        const filePath = 'genassets/savedgames/' + filename;
         await fs.writeFile(filePath, jsonString);
     } catch (err) {
         console.error("Error saving game data:", err);
@@ -27,7 +27,7 @@ export async function saveGameDataFields(filename, attributes) {
     currentSave = attributes
 
     try {
-        const filePath = 'savedgames/' + filename;
+        const filePath = 'genassets/savedgames/' + filename;
         let existingData = {};
 
         try {
@@ -52,9 +52,9 @@ export async function saveGameDataFields(filename, attributes) {
     }
 }
 
-export async function loadGameData(filename) {
+export async function loadGameData(type, filename) {
     try {
-        const filePath = 'savedgames/' + filename;
+        const filePath = 'genassets/' + type + '/' + filename;
         const jsonString = await fs.readFile(filePath);
         const gameData = JSON.parse(jsonString);
         return gameData;
