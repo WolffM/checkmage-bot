@@ -1,30 +1,18 @@
 import fs from 'node:fs/promises';
 let isSaving = false;
-let currentSave = {};
-
-export async function saveGameData(gameData, filename) {
-    const jsonString = JSON.stringify(gameData);
-
-    try {
-        await fs.mkdir('genassets/savedgames', { recursive: true });
-
-        const filePath = 'genassets/savedgames/' + filename;
-        await fs.writeFile(filePath, jsonString);
-    } catch (err) {
-        console.error("Error saving game data:", err);
-    }
-}
+let isLoading = false;
 
 export async function saveGameDataFields(filename, attributes) {
     if (isSaving) {
-        console.log('CurrentSave:', currentSave)
-        console.error('Save operation already in progress. Skipping.');
-        console.log('Attributes:', attributes)
-        return;
+        console.log('loadGameData.Save is in progress...')
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second
+    }
+    if (isLoading) {
+        console.log('loadGameData.Load is in progress...')
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second
     }
 
     isSaving = true;
-    currentSave = attributes
 
     try {
         const filePath = 'genassets/savedgames/' + filename;
@@ -45,21 +33,47 @@ export async function saveGameDataFields(filename, attributes) {
         const jsonString = JSON.stringify(existingData);
         await fs.writeFile(filePath, jsonString); 
     } catch (err) {
-        console.error("Error saving game data:", err);
+        console.error("saveGameDataFields.Error saving game data:", err);
     } finally {
         isSaving = false;
-        currentSave = {}
     }
 }
 
 export async function loadGameData(type, filename) {
+    if (isLoading) {
+        console.log('loadGameData.Load is in progress...')
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second
+    }
+    while (isSaving) { 
+        console.log('loadGameData.Save is in progress...')
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second
+    }
+
+    isLoading = true;
+
     try {
+        
         const filePath = 'genassets/' + type + '/' + filename;
         const jsonString = await fs.readFile(filePath);
         const gameData = JSON.parse(jsonString);
         return gameData;
     } catch (err) {
-        console.error("Error loading game data:", err);
+        console.error("loadGameData.Error loading game data:", err);
         return null; // Or provide a default starting game state
+    } finally {
+        isLoading = false;
+    }
+}
+
+export async function saveGameData(gameData, filename) {
+    const jsonString = JSON.stringify(gameData);
+
+    try {
+        await fs.mkdir('genassets/savedgames', { recursive: true });
+
+        const filePath = 'genassets/savedgames/' + filename;
+        await fs.writeFile(filePath, jsonString);
+    } catch (err) {
+        console.error("saveGameData.Error saving game data:", err);
     }
 }

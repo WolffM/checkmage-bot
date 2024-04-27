@@ -66,7 +66,7 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         const heroData = JSON.parse(fs.readFileSync('./assets/hero_data.json'));
-        console.log(`${currentPlayerName} chooses`, choice)
+        console.log(`interactionCreate.${currentPlayerName} chooses`, choice)
         const selectedHero = heroData.heroes.find(hero => hero.name === choice);
 
         if (!selectedHero) {
@@ -74,11 +74,12 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-
+        console.log('interactionCreate.draft.loadGameData')
         let gameData = await loadGameData('savedgames', gameFilename);
         currentPlayerTeam = currentPlayerName + 'Team';
         gameData[currentPlayerTeam].push(selectedHero)
 
+        console.log('interactionCreate.draft.saveGameData')
         await saveGameDataFields(gameFilename, {
             [currentPlayerTeam]: gameData[currentPlayerTeam]
         });
@@ -94,20 +95,20 @@ client.on('interactionCreate', async (interaction) => {
                 components[0].components.splice(buttonIndex, 1);
                 await interaction.update({ embeds: [newEmbed], components: components })
             } else {
-                console.error("Couldn't find matching button to remove");
+                console.error("interactionCreate.Couldn't find matching button to remove");
             }
         } else {
             const embed = new EmbedBuilder()
                 .setTitle(`(draft round #${draftRound})`)
             draftRound++
             await interaction.update({ embeds: [embed], components: [] })
-            console.log('ending interaction')
+            console.log('interactionCreate.ending interaction')
         }
     }
 
     else if (interaction.customId.startsWith('startselect_')) {
         const [, playerId, heroName] = interaction.customId.split('_'); // Extract filename
-        console.log(`playerId + heroName + interactionid : ${playerId} + ${heroName} + ${interaction.user.id}`)
+        console.log(`interactionCreate.startSelect.playerId + heroName + interactionid : ${playerId} + ${heroName} + ${interaction.user.id}`)
         if (interaction.user.id !== playerId) {
             await interaction.reply({ content: `That's not your team!`, ephemeral: true });
             return
@@ -118,14 +119,14 @@ client.on('interactionCreate', async (interaction) => {
             opponentStarterChosen = heroName;
         }
         interactionsReceived++
-        console.log('recieved interaction');
+        console.log('interactionCreate.startSelect.recieved interaction');
         interaction.update({ content: 'Choice registered!', components: [], ephemeral: true });
     }
 
     else if (interaction.customId.startsWith('switchselect_')) {
         const [, playerId, heroName, gameFilename] = interaction.customId.split('_'); // Extract filename
 
-        console.log(`playerId + heroName + interactionid : ${playerId} + ${heroName} + ${interaction.user.id}`)
+        console.log(`interactionCreate.switchselect.playerId + heroName + interactionid : ${playerId} + ${heroName} + ${interaction.user.id}`)
 
         if (playerId === 'dead') {
             await interaction.reply({ content: `You can't switch into defeated heroes!`, ephemeral: true });
@@ -139,13 +140,13 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: `That's not your team!`, ephemeral: true });
             return
         }
+        console.log('interactionCreate.switchselect.loadGameData')
         let gameData = await loadGameData('savedgames', gameFilename);
         if (playerId == challengerId) {
             await updateActiveHero(gameData, gameFilename, heroName, true); 
         } else {
             await updateActiveHero(gameData, gameFilename, heroName, false);
         }
-         ++
         interaction.update({ content: 'Choice registered!', components: [], ephemeral: true });
     }
 
@@ -193,7 +194,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         } while (true);
 
-        console.log('gameFilename', gameFilename)
+        console.log('interactionCreate.herodraft_accept.gameFilename', gameFilename)
 
         challengerId = challenger.id;
         challengerName = challenger.username;
@@ -238,13 +239,14 @@ client.on('interactionCreate', async (interaction) => {
     else if (interaction.customId.startsWith('herodraft_')) {
         const [, actionType, gameFilename] = interaction.customId.split('_'); // Extract filename
 
+        console.log('interactionCreate.herodraft.loadingGameData')
         let gameData = await loadGameData('savedgames', gameFilename);
 
         if (!gameData) {
             await interaction.reply({ content: "Could not load game data.", ephemeral: true });
             return;
         }
-        console.log('actionType', actionType)
+        console.log('interactionCreate.herodraft.actionType', actionType)
         if (interaction.user.id !== currentPlayerId) {
             await interaction.reply({ content: `It's not your turn!`, ephemeral: true });
             return
@@ -263,10 +265,11 @@ client.on('interactionCreate', async (interaction) => {
                 }
                 damageDealt = activeChallengerHero.damage
                 currentHeroName = activeChallengerHero.name
+                console.log('interactionCreate.attack.saveGameData')
                 await saveGameDataFields(gameFilename, {
                     activeOpponentHero: activeOpponentHero
                 });
-                console.log('reducing opponent Health')
+                console.log('interactionCreate.attack.reducing opponent Health')
             } else {
                 activeChallengerHero.currentHealth -= 100
                 if(activeChallengerHero.currentHealth <= 0 ){
@@ -274,10 +277,11 @@ client.on('interactionCreate', async (interaction) => {
                 }
                 damageDealt = activeOpponentHero.damage
                 currentHeroName = activeOpponentHero.name
+                console.log('interactionCreate.attack.saveGameData')
                 await saveGameDataFields(gameFilename, {
                     activeChallengerHero: activeChallengerHero
                 });
-                console.log('reducing challenger Health')
+                console.log('interactionCreate.attack.reducing challenger Health')
             }
             await interaction.update({ components: [] })
             await interaction.followUp(`${currentHeroName} attacked and dealt ${damageDealt} damage!`);
@@ -289,7 +293,7 @@ client.on('interactionCreate', async (interaction) => {
         }
         // **** ABILITY HANDLER ****
         else if (actionType === 'ability') {
-            console.log('not implemented')
+            console.log('interactionCreate.ability.not implemented')
         }
         return
     }
@@ -326,13 +330,9 @@ async function handleHeroSwitch(gameData, playerName, playerId, gameFilename, in
         ],
     });
 
-    interactionsReceived = 0;
-    while (interactionsReceived < 1) {
-        console.log(`interactions are at: ${interactionsReceived}`);
-        const switchSelectionInteraction = await switchSelection.awaitMessageComponent({ filter: i => i.user.id === playerId && i.customId.startsWith('switchselect'), time: 600000 });
-    }
-
-    console.log('completed switch');
+    console.log('handleHeroSwitch.awaitingSelectionSelect')
+    const switchSelectionInteraction = await switchSelection.awaitMessageComponent({ filter: i => i.user.id === playerId && i.customId.startsWith('switchselect'), time: 600000 });
+    console.log('handleHeroSwitch.completed switch');
     
     if(!forceSwitch){
         await interaction.followUp(`${playerName.toString()} switched out their active hero!`);
@@ -369,7 +369,7 @@ async function heroDraft(channel, draftSize, gameFilename) {
 
     shuffleArray(draftPool); // Shuffle the hero pool
 
-    console.log('draftsize:', draftSize)
+    console.log('heroDraft.draftsize:', draftSize)
 
     if (!skipDraft) {
 
@@ -383,7 +383,7 @@ async function heroDraft(channel, draftSize, gameFilename) {
             const hero1Path = './assets/' + hero1.name + 'Combat.png'
             const hero2Path = './assets/' + hero2.name + 'Combat.png'
             const hero3Path = './assets/' + hero3.name + 'Combat.png'
-            console.log(`building: './genassets/images/draft/' + ${hero1.name} + '+' + ${hero2.name} + '+' + ${hero3.name} + 'Draft.png'`)
+            console.log(`heroDraft.building: './genassets/images/draft/' + ${hero1.name} + '+' + ${hero2.name} + '+' + ${hero3.name} + 'Draft.png'`)
             const outputImagePath = './genassets/images/draft/' + hero1.name + '+' + hero2.name + '+' + hero3.name + 'Draft.png';
             const imagePromise = combineImagesForDraft(hero1Path, hero2Path, hero3Path, outputImagePath)
             imagePromises.push(imagePromise);
@@ -425,14 +425,14 @@ async function heroDraft(channel, draftSize, gameFilename) {
                 const filter = (i) => i.customId.startsWith('draft_') && currentPlayerId == i.user.id;
                 const buttonInteraction = await message.awaitMessageComponent({ filter, time: 600000 /* Timeout */ })
                     .catch(error => {
-                        console.error('Draft timeout or error:', error);
+                        console.error('heroDraft.Draft timeout or error:', error);
                         return null;
                     });
 
                 if (!buttonInteraction) continue; // Timeout or error
 
                 swapPlayers()
-                console.log('interactionsReceived')
+                console.log('heroDraft.interactionsReceived')
                 interactionsReceived++;
             }
             swapPlayers()
@@ -450,17 +450,19 @@ async function heroDraft(channel, draftSize, gameFilename) {
             }
         }
 
+        console.log('heroDraft.saveGameData')
         await saveGameDataFields(gameFilename, {
             [challengerTeamName]: challengerTeam,
             [opponentTeamName]: opponentTeam
         });
     }
 
+    console.log('heroDraft.loadGameData')
     let gameData = await loadGameData('savedgames', gameFilename);
-    console.log('opponentId', opponentId)
-    console.log('opponentName', opponentName)
-    console.log('challengerId', challengerId)
-    console.log('challengerName', challengerName)
+    console.log('heroDraft.opponentId', opponentId)
+    console.log('heroDraft.opponentName', opponentName)
+    console.log('heroDraft.challengerId', challengerId)
+    console.log('heroDraft.challengerName', challengerName)
 
 
     const challengerSelection = await channel.send({
@@ -490,6 +492,7 @@ async function heroDraft(channel, draftSize, gameFilename) {
         gameData[opponentTeamName] = gameData[opponentTeamName].filter(hero => hero.name !== opponentStarterChosen);
 
         // Save the updated game data (no changes needed here)
+        console.log('heroDraft.saveGameData')
         await saveGameDataFields(gameFilename, {
             activeChallengerHero: challengerHero,
             activeOpponentHero: opponentHero,
@@ -498,7 +501,7 @@ async function heroDraft(channel, draftSize, gameFilename) {
         });
 
     } else {
-        console.log(`failed to get both hero's ):`)
+        console.log(`heroDraft.failed to get both hero's ):`)
     }
 
     heroGame(channel, gameFilename)
@@ -507,6 +510,7 @@ async function heroDraft(channel, draftSize, gameFilename) {
 async function updateActiveHero(gameData, gameFilename, heroName, isChallenger) {
     const teamName = isChallenger ? challengerTeamName : opponentTeamName;
     const activeHeroProperty = isChallenger ? 'activeChallengerHero' : 'activeOpponentHero';
+    console.log('updateActiveHero.Start')
 
     // Bench current active hero
     gameData[teamName].push(gameData[activeHeroProperty]);
@@ -518,6 +522,7 @@ async function updateActiveHero(gameData, gameFilename, heroName, isChallenger) 
     gameData[teamName] = gameData[teamName].filter(hero => hero.name !== heroName); 
 
     // Save updated game data
+    console.log('updateActiveHero.saveGameData')
     await saveGameDataFields(gameFilename, {
         [activeHeroProperty]: updatedActiveHero,
         [teamName]: gameData[teamName]
@@ -533,6 +538,7 @@ async function heroGame(channel, gameFilename) {
         delay(1000)
         turnCount++
         swapPlayers()
+        console.log('interactionCreate.heroGame.loadGameData')
         let gameData = await loadGameData('savedgames', gameFilename);
 
         let activeChallengerHero = gameData.activeChallengerHero;
@@ -542,11 +548,12 @@ async function heroGame(channel, gameFilename) {
         if (activeChallengerHero.currentHealth <= 0) {
             await channel.send(`${activeChallengerHero.name} has been defeated...`);
             if (!(gameData[challengerTeamName].find(hero => hero.isAlive === true))) {
+                console.log('heroGame.ChallengerDefeated.EndGame')
                 await channel.send(`${challengerName} has lost!`);
                 gameInProgress = false
                 break;
             } else {
-                console.log('')
+                console.log('heroGame.ChallengerDefeated.StartHeroSwitch')
                 await handleHeroSwitch(gameData, challengerName, challengerId, gameFilename, null)
                 turnCount--
                 continue
@@ -555,10 +562,12 @@ async function heroGame(channel, gameFilename) {
         if (activeOpponentHero.currentHealth <= 0) {
             await channel.send(`${activeOpponentHero.name} has been defeated...`);
             if (!(gameData[opponentTeamName].find(hero => hero.isAlive === true))) {
+                console.log('heroGame.OpponentDefeated.EndGame')
                 await channel.send(`${opponentName} has lost!`);
                 gameInProgress = false;
                 break;
             } else {
+                console.log('heroGame.OpponentDefeated.StartHeroSwitch')
                 await handleHeroSwitch(gameData, opponentName, opponentId, gameFilename, null)
                 turnCount--
                 continue
@@ -636,7 +645,7 @@ async function heroGame(channel, gameFilename) {
             if (error.name === 'TimeoutError') {
                 await channel.send(`${currentPlayerName} took too long to decide!`);
             } else {
-                console.error("Error waiting for interaction:", error);
+                console.error("heroGame.Error waiting for interaction:", error);
             }
         }
     }
