@@ -9,6 +9,7 @@ dotenv.config();
 const TOKEN = process.env.DISCORD_TOKEN;
 let gameInProgress, challengerStarterChosen, opponentStarterChosen;
 let skipDraft = true;
+let changeInProgress = false;
 let interactionsReceived = 0;
 let draftRound = 1;
 let challengerTeamName, opponentTeamName, currentPlayerId, otherPlayerId, otherPlayerName, currentPlayerName, challengerId, challengerName, opponentId, opponentName = '';
@@ -59,7 +60,6 @@ client.on('interactionCreate', async (interaction) => {
 
     } else if (interaction.customId.startsWith('draft_')) {
         const [, choice] = interaction.customId.split('_'); // Extract filename
-
         if (interaction.user.id !== currentPlayerId) {
             await interaction.reply({ content: `It's not your turn!`, ephemeral: true });
             return
@@ -74,7 +74,7 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        console.log('interactionCreate.draft.loadGameData')
+        changeInProgress = true;
         let gameData = await loadGameData('savedgames', gameFilename);
         currentPlayerTeam = currentPlayerName + 'Team';
         gameData[currentPlayerTeam].push(selectedHero)
@@ -113,6 +113,8 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: `That's not your team!`, ephemeral: true });
             return
         }
+
+        changeInProgress = true;
         if (playerId == challengerId) {
             challengerStarterChosen = heroName;
         } else {
@@ -125,7 +127,6 @@ client.on('interactionCreate', async (interaction) => {
 
     else if (interaction.customId.startsWith('switchselect_')) {
         const [, playerId, heroName, gameFilename] = interaction.customId.split('_'); // Extract filename
-
         console.log(`interactionCreate.switchselect.playerId + heroName + interactionid : ${playerId} + ${heroName} + ${interaction.user.id}`)
 
         if (playerId === 'dead') {
@@ -140,6 +141,7 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: `That's not your team!`, ephemeral: true });
             return
         }
+        changeInProgress = true;
         console.log('interactionCreate.switchselect.loadGameData')
         let gameData = await loadGameData('savedgames', gameFilename);
         if (playerId == challengerId) {
@@ -154,7 +156,7 @@ client.on('interactionCreate', async (interaction) => {
         const opponent = interaction.user;
         const channel = interaction.channel
         let challenger = null;
-
+        
         // Fetch recent messages to find the challenge
         const messages = await interaction.channel.messages.fetch({ limit: 10 }); // Adjust limit if needed
         const challengeMessage = messages.find(msg => msg.content.startsWith('!herodraft'));
@@ -172,6 +174,8 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: 'You cannot battle yourself!', ephemeral: true });
             return;
         }
+
+        changeInProgress = true;
 
         // Create and send the game start embed
         const embed = new EmbedBuilder()
@@ -251,6 +255,8 @@ client.on('interactionCreate', async (interaction) => {
             await interaction.reply({ content: `It's not your turn!`, ephemeral: true });
             return
         }
+
+        changeInProgress = true;
         // **** ATTACK HANDLER ****
         if (actionType === 'attack') {
             let activeChallengerHero = gameData.activeChallengerHero
@@ -284,6 +290,7 @@ client.on('interactionCreate', async (interaction) => {
                 console.log('interactionCreate.attack.reducing challenger Health')
             }
             await interaction.update({ components: [] })
+            
             await interaction.followUp(`${currentHeroName} attacked and dealt ${damageDealt} damage!`);
         }
         // **** SWITCH HANDLER ****
@@ -295,8 +302,10 @@ client.on('interactionCreate', async (interaction) => {
         else if (actionType === 'ability') {
             console.log('interactionCreate.ability.not implemented')
         }
+        changeInProgress = false;
         return
     }
+    changeInProgress = false;
 });
 
 export function swapPlayers() {
@@ -535,9 +544,13 @@ async function heroGame(channel, gameFilename) {
     let turnCount = 1;
 
     while (true) {
-        delay(1000)
+        while(changeInProgress){
+            console.log('Change in progress...')
+            await delay(1000)
+        }
         turnCount++
         swapPlayers()
+
         console.log('interactionCreate.heroGame.loadGameData')
         let gameData = await loadGameData('savedgames', gameFilename);
 

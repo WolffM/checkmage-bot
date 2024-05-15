@@ -40,10 +40,6 @@ export async function saveGameDataFields(filename, attributes) {
 }
 
 export async function loadGameData(type, filename) {
-    if (isLoading) {
-        console.log('loadGameData.Load is in progress...')
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second
-    }
     while (isSaving) { 
         console.log('loadGameData.Save is in progress...')
         await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second

@@ -24,7 +24,7 @@ export async function combineImagesForCombat(imagePath1, imagePath2, outputImage
         // Save the new image
         await combinedImage.writeAsync(outputImagePath); 
 
-        console.log('Images combined successfully!');
+        console.log('combineImagesForCombat.Images combined successfully!');
     } catch (error) {
         console.error('Error combining images:', error);
     }
@@ -50,7 +50,7 @@ export async function combineImagesForDraft(imagePath1, imagePath2, imagePath3, 
         // Save the new image
         await combinedImage.writeAsync(outputImagePath); 
 
-        console.log('Images combined successfully!');
+        console.log('combineImagesForCombat.Images combined successfully!');
     } catch (error) {
         console.error('Error combining images:', error);
     }
