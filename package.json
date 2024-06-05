@@ -5,7 +5,8 @@
   "description": "checkmage-bot",
   "main": "bot.mjs",
   "scripts": {
-    "test": "npm start"
+    "test": "npm start",
+    "start": "node bot.mjs"
   },
   "repository": {
     "type": "git",
