@@ -1,5 +1,6 @@
 import { saveGameData, saveGameDataFields, loadGameData } from './saveData.mjs';
 import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { getGroqResponse } from './groq.mjs';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import { combineImagesForCombat, combineImagesForDraft, shuffleArray, delay } from './helper.mjs';
@@ -22,7 +23,7 @@ client.on('ready', () => {
     console.log(`Logged in as ${client.user.tag}!`);
 });
 
-client.on('messageCreate', async (message) => { // Updated event name
+client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
     if (gameInProgress) {
@@ -33,6 +34,9 @@ client.on('messageCreate', async (message) => { // Updated event name
             await message.author.reply({ content: 'A game is inprogress!', ephemeral: true });
         }
         return;
+    } else if (message.mentions.users.has(client.user.id)) {
+        const groqResponse = await getGroqResponse(message.content);
+        await message.channel.send(groqResponse);
     } else if (message.content.startsWith('!thursday')) {
         await createWeeklyCalendarMessage(message.channel, 4);
         await message.delete();
