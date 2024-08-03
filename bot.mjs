@@ -29,6 +29,8 @@ client.on('messageCreate', async (message) => {
         await message.delete();
     } else if (message.content.startsWith('!roll')) {
         await calculateRollResult(message.content.slice(5), message); // slice to remove '!roll'
+    } else if (message.content.startsWith('!fetch')) {
+        await getResponse(message.channel);
     }
 });
 
@@ -207,6 +209,14 @@ async function createWeeklyCalendarMessage(channel, dayOffset = 3) {
 function round(number, decimalPlaces) {
     const factor = 10 ** decimalPlaces;
     return Math.round(number * factor) / factor;
+}
+
+async function getResponse(channel) {
+    const response = await fetch('https://persistent-corissa-dbforest-bc3d6320.koyeb.app/data/test_table');
+    const data = await response.json();
+    console.log(data)
+    const message = data[0].name;
+    await channel.send(message)
 }
 
 if (TOKEN) {
