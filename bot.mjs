@@ -15,6 +15,21 @@ client.on('ready', () => {
 
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
+    else if (message.author.id === sillyUserId) {
+        let modifiedContent = message.content;
+
+        if (message.content.endsWith('?')) {
+            const questionMarks = message.content.match(/\?+$/)[0];
+            modifiedContent = `¿${message.content.slice(0, -questionMarks.length)}${questionMarks}`;
+        }
+        if (message.content.endsWith('!')) {
+            const exclamationMarks = message.content.match(/!+$/)[0];
+            modifiedContent = `¡${message.content.slice(0, -exclamationMarks.length)}${exclamationMarks}`;
+        }
+        if (modifiedContent !== message.content) {
+            await message.edit(modifiedContent).catch(console.error);
+        }
+    }
     else if (message.mentions.users.has(client.user.id)) {
         const groqResponse = await getGroqResponse(message.content);
         await message.channel.send(groqResponse);
