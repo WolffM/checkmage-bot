@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 const TOKEN = process.env.DISCORD_TOKEN;
+const sillyUserId = process.env.SILLYUSER;
 
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
