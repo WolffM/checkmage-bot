@@ -18,12 +18,15 @@ client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     else if (message.author.id === sillyUserId) {
         let modifiedContent = message.content;
+        console.log("i see silly user");
 
         if (message.content.endsWith('?')) {
+            console.log("i see silly message!");
             const questionMarks = message.content.match(/\?+$/)[0];
             modifiedContent = `¿${message.content.slice(0, -questionMarks.length)}${questionMarks}`;
         }
         if (message.content.endsWith('!')) {
+            console.log("i see silly message!");
             const exclamationMarks = message.content.match(/!+$/)[0];
             modifiedContent = `¡${message.content.slice(0, -exclamationMarks.length)}${exclamationMarks}`;
         }
