@@ -16,7 +16,8 @@ client.on('ready', () => {
 
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
-    else if (message.author.id === sillyUserId) {
+    console.log(message.author.id);
+    if (message.author.id === sillyUserId) {
         let modifiedContent = message.content;
         console.log("i see silly user");
 
