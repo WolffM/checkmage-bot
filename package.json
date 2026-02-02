@@ -22,7 +22,6 @@
   },
   "homepage": "https://github.com/erinwolff/checkmate-bot#readme",
   "dependencies": {
-    "discord": "^0.8.2",
     "discord.js": "^14.12.1",
     "dotenv": "^16.4.5",
     "groq-sdk": "^0.4.0",
