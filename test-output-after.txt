@@ -1,0 +1,20 @@
+
+> discord@1.0.0 test
+> npm start
+
+
+> discord@1.0.0 start
+> node bot.mjs
+
+file:///home/runner/work/checkmage-bot/checkmage-bot/node_modules/groq-sdk/index.mjs:24
+            throw new Errors.GroqError("The GROQ_API_KEY environment variable is missing or empty; either provide it, or instantiate the Groq client with an apiKey option, like new Groq({ apiKey: 'My API Key' }).");
+                  ^
+
+GroqError: The GROQ_API_KEY environment variable is missing or empty; either provide it, or instantiate the Groq client with an apiKey option, like new Groq({ apiKey: 'My API Key' }).
+    at new Groq (file:///home/runner/work/checkmage-bot/checkmage-bot/node_modules/groq-sdk/index.mjs:24:19)
+    at file:///home/runner/work/checkmage-bot/checkmage-bot/groq.mjs:6:14
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:661:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.14.1
