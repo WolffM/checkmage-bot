@@ -1,0 +1,52 @@
+---
+title: Checkmage
+summary: >-
+  A Discord bot for one server: mention it for an in-character reply from
+  an AI wizard persona, or use its small set of utility commands — a
+  dice roller, a weekly session announcer, and a one-user text mangler.
+  No sign-in, no tier: whoever is in the server can use it.
+features:
+  - name: AI persona replies
+    summary: 'Mention the bot for a reply from Checkmage, a scholarly-wizard persona built on an LLM.'
+    anchor: ai-persona-replies
+  - name: Dice roller
+    summary: '"!roll" parses dice-notation expressions, with modifiers, and flags critical successes and failures.'
+    anchor: dice-roller
+  - name: Weekly session announcer
+    summary: '"!thursday" / "!friday" posts the next session''s time as a Discord countdown.'
+    anchor: weekly-session-announcer
+  - name: Trivia stats
+    summary: '"!triviastats" tallies a trivia bot''s right answers per player.'
+    anchor: trivia-stats
+  - name: Silly text mangler
+    summary: 'For one configured user only, trailing "?" or "!" get mirrored into upside-down punctuation.'
+    anchor: silly-text-mangler
+trivia:
+  - 'The bot''s original game — fifteen heroes, each with its own full-size combat-art image, a draft, a starter pick and a "switch" mechanic — was deleted in a single commit whose entire message is "):" (`2011a63`), three days after the bot''s AI persona first went live (`2ff0e8e`).'
+  - 'A fully unused `discord` npm package, distinct from the `discord.js` the bot actually runs on, sat in `package.json` for almost two years before a security pass removed it on 2026-02-06 to close a MooTools ReDoS advisory, GHSA-v63q-hgqc-qvpg (`7bae4b2` added it).'
+  - 'A repo-wide lint workflow, vibeCheck, lived here for exactly 304 days: added `2026-01-07` (`acecee9`), updated once six days later (`edc99b6`), then removed in a commit titled, in full, "ci: remove vibeCheck" (`58bad44`).'
+  - 'The AI persona has always introduced itself as "Checkmage," but the code that holds its system prompt names the variable `bruenorPrompt`, with no commit anywhere named Bruenor (`groq.mjs`, `2ff0e8e`).'
+---
+
+# Checkmage
+
+Checkmage began in March 2024 as a Discord bot for a tabletop group's
+server: a weekly-session announcer, then a full hero-drafting minigame
+with combat art for fifteen heroes. The drafting game was deleted three
+months later in favor of something smaller — an AI wizard persona
+(`groq.mjs`, via Groq's API) that replies in character when mentioned —
+alongside a handful of utility commands: a dice roller, the session
+announcer, a trivia-stats tally, and a running joke that mirrors one
+user's punctuation.
+
+- [Features](features.md): what each command does.
+- [Contributing](contributing.md): running it, its four dependencies, how it ships.
+- [History](history.md): a hero-drafting game, built and then deleted.
+- [Trivia](trivia.md)
+
+## Trivia
+
+The game that gave this bot its heavy lifting — fifteen heroes' worth of
+combat art, a draft phase, starter picks and a type-matchup switch — was
+cut in a single commit with no explanation at all, just "):"
+([history](history.md#the-hero-draft-built-then-cut)).
