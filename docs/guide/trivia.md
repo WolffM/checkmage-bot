@@ -3,9 +3,9 @@
 The best facts about Checkmage, each with its source.
 
 - The bot's original game — fifteen heroes, each with its own full-size
-  combat-art image, a draft phase, starter picks and a "switch" mechanic
-  — was deleted in a single commit whose entire message is "):"
-  (`2011a63`), three days after the bot's AI persona first went live
+  combat-art image, a draft phase, starter picks and a "switch" mechanic —
+  was deleted in a single commit whose entire message is "):" (`2011a63`).
+  That landed three days after the bot's AI persona first went live
   (`2ff0e8e`).
 - A fully unused `discord` npm package, distinct from the `discord.js`
   the bot actually runs on, sat in `package.json` for almost two years

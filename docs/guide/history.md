@@ -20,10 +20,10 @@ mechanic (`0420ab2`) — fifteen heroes in all, each with its own full-size
 combat-art image. On 2024-06-06, an AI persona ("Checkmage lives,"
 `2ff0e8e`) was added alongside it, built on Groq's chat-completion API.
 Three days later, the entire drafting game was deleted in a commit whose
-message is simply "):" — 21 files changed, 1,154 deletions against just
-3 insertions: the hero data (169 lines), 985 lines of code across
-`bot.mjs`, `helper.mjs` and `saveData.mjs`, and 17 image files (the
-fifteen heroes' combat art plus two blank-state images) (`2011a63`).
+message is simply "):" — 21 files changed, 1,154 deletions against just 3
+insertions. It took the hero data (169 lines), 985 lines of code across
+`bot.mjs`, `helper.mjs` and `saveData.mjs`, and 17 image files: the fifteen
+heroes' combat art plus two blank-state images (`2011a63`).
 
 ## Small utilities (2024-08 – 2024-12)
 

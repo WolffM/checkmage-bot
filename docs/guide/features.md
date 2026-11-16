@@ -51,11 +51,10 @@ percentages.
 **How to use it.** `!triviastats` in a channel the trivia bot has posted
 in.
 
-**What it does not do.** It never actually posts its result: the command
-deletes the triggering message and then only logs the stats to the
-bot's own console, never to the channel (`bot.mjs`, the commented-out
-`channel.send(statsMessage)` in `calculateTriviaStats`) — see the open
-bug noted in [contributing.md](contributing.md).
+**What it does not do.** It never actually posts its result. The command
+deletes the triggering message, then only logs the stats to the bot's own
+console — never to the channel. See the open bug noted in
+[contributing.md](contributing.md#a-known-bug).
 
 ## Silly text mangler
 
